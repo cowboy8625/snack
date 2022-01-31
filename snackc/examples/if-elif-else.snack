@@ -1,0 +1,14 @@
+0 1 == if
+    1 .
+    0 1 == if
+        10 .
+    0 1 == elif
+        20 .
+    else
+        30 .
+    end
+1 0 == elif
+    2 .
+else
+    3 .
+end
