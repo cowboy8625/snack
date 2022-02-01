@@ -4,6 +4,21 @@ The language that eats the stack.  Heavily inspired by [porth](https://gitlab.co
 which is inspired off of [forth](https://en.wikipedia.org/wiki/Forth_(programming_language))
 
 
+# Install
+
+To use Snack you will need [Rust](https://rustup.rs/) and [fasm](https://flatassembler.net/download.php)
+After installing Rust just run `cargo install --git https://github.com/cowboy8625/snack`
+and you all set.
+
+# Snackc Commands
+
+**Build**
+`snackc <filename>`
+
+**Build & Run**
+`snackc run <filename>`
+
+
 # Syntax
 
 **Hello World**
