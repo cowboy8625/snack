@@ -492,11 +492,11 @@ fn keyword(
             out.write_all(b"    push     rdi\n")?;
         }
         KeyWord::Over => {
-            out.write_all(b"   pop       rdi\n")?;
-            out.write_all(b"   pop       rdx\n")?;
-            out.write_all(b"   push      rdx\n")?;
-            out.write_all(b"   push      rdi\n")?;
-            out.write_all(b"   push      rdx\n")?;
+            out.write_all(b"    pop      rdi\n")?;
+            out.write_all(b"    pop      rdx\n")?;
+            out.write_all(b"    push     rdx\n")?;
+            out.write_all(b"    push     rdi\n")?;
+            out.write_all(b"    push     rdx\n")?;
         }
         KeyWord::Rot => {
             out.write_all(b"    pop      rdi\n")?;
@@ -522,7 +522,7 @@ fn keyword(
 fn primitives(out: &mut std::fs::File, prim: &Prim, _span: Span) -> std::io::Result<()> {
     match prim {
         Prim::Int(v) => {
-            out.write_all(format!("    push   {}\n", v).as_bytes())?;
+            out.write_all(format!("    push     {}\n", v).as_bytes())?;
         }
     }
     Ok(())
@@ -543,10 +543,10 @@ fn operators(out: &mut std::fs::File, op: &Oper, _span: Span) -> std::io::Result
             out.write_all(b"    push     rdi\n")?;
         }
         Oper::Mul => {
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rdx\n")?;
-            out.write_all(b"    sub      rdx,rdi\n")?;
-            out.write_all(b"    push     rdi\n")?;
+            out.write_all(b"    pop     rax\n")?;
+            out.write_all(b"    pop     rbx\n")?;
+            out.write_all(b"    mul     rbx\n")?;
+            out.write_all(b"    push    rax\n")?;
         }
         Oper::Div => {
             out.write_all(b"    pop      rbx\n")?;
@@ -631,20 +631,28 @@ fn snack_source_file(filename: &str) -> Result<String, String> {
 }
 
 fn main() {
-    let arguments: Vec<String> = dbg!(std::env::args().collect());
-    let _source_file = arguments[0].to_string();
+    let arguments: Vec<String> = std::env::args().collect();
+    let mut run_flag = false;
+    let mut idx_of_program_name = 0;
+    for arg in arguments.iter() {
+        match arg.as_str() {
+            "run" => run_flag = true,
+            _ => idx_of_program_name += 1,
+        }
+    }
+    let source_file = arguments[0].to_string();
     if arguments.len() < 2 {
         println!("No File given to compile.");
         std::process::exit(1);
     }
-    let filename = arguments[1].to_string();
+    let filename = arguments[idx_of_program_name].to_string();
     let src = snack_source_file(&filename).expect("Failed to open file.  Expected a Snack File.");
     let char_span = pos_enum(&src);
     let stream = char_span.iter().peekable();
     let scanner = Scanner::new(stream).lexer().link();
-    for token in scanner.tokens.iter() {
-        println!("{:?}", token);
-    }
+    // for token in scanner.tokens.iter() {
+    //     println!("{:?}", token);
+    // }
     if !scanner.errors.is_empty() {
         for e in scanner.errors.iter() {
             println!("{}", e);
@@ -652,4 +660,20 @@ fn main() {
         std::process::exit(1);
     }
     compile_to_fams_x86_64(&scanner.tokens, &filename).unwrap();
+    let filename = format!("{}.asm", &filename.split('.').collect::<Vec<&str>>()[0]);
+    let fasm_output = std::process::Command::new("fasm")
+        .arg(&filename)
+        .output()
+        .expect(&format!("Failed to compile [{}].", source_file));
+    print!(
+        "[-----PASS-----]\n{}",
+        String::from_utf8(fasm_output.stdout).unwrap_or("ERROR".into())
+    );
+    if run_flag {
+        let program_name = &filename.split('.').collect::<Vec<&str>>()[0];
+        std::process::Command::new(&format!("./{}", program_name))
+            .status()
+            // .spawn()
+            .expect(&format!("Failed to run [{}].", program_name));
+    }
 }
