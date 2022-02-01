@@ -2,6 +2,8 @@ use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::{fmt, iter::Peekable};
 
+const MEMORY: u32 = 640_000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pos {
     pub idx: usize,
@@ -42,6 +44,12 @@ pub enum KeyWord {
     Drop,
     Max,
     Memory,
+    SysCall1,
+    SysCall2,
+    SysCall3,
+    SysCall4,
+    SysCall5,
+    SysCall6,
 }
 
 impl KeyWord {
@@ -61,6 +69,12 @@ impl KeyWord {
             "drop" => Some(Drop),
             "max" => Some(Max),
             "memory" => Some(Memory),
+            "syscall1" => Some(SysCall1),
+            "syscall2" => Some(SysCall2),
+            "syscall3" => Some(SysCall3),
+            "syscall4" => Some(SysCall4),
+            "syscall5" => Some(SysCall5),
+            "syscall6" => Some(SysCall6),
             _ => None,
         }
     }
@@ -82,12 +96,20 @@ impl fmt::Display for KeyWord {
             Self::Drop => write!(f, "drop"),
             Self::Max => write!(f, "max"),
             Self::Memory => write!(f, "memory"),
+            Self::SysCall1 => write!(f, "syscall1"),
+            Self::SysCall2 => write!(f, "syscall2"),
+            Self::SysCall3 => write!(f, "syscall3"),
+            Self::SysCall4 => write!(f, "syscall4"),
+            Self::SysCall5 => write!(f, "syscall5"),
+            Self::SysCall6 => write!(f, "syscall6"),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Oper {
+    Store,
+    Load,
     Plus,
     Minus,
     Mul,
@@ -104,6 +126,8 @@ pub enum Oper {
 impl fmt::Display for Oper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Store => write!(f, "!"),
+            Self::Load => write!(f, "@"),
             Self::Plus => write!(f, "+"),
             Self::Minus => write!(f, "-"),
             Self::Mul => write!(f, "/"),
@@ -239,6 +263,14 @@ impl<'a> Scanner<'a> {
                 '!' if self.stream.peek().unwrap_or(&&unwrap).0 == '=' => {
                     let (_, end) = self.stream.next().unwrap();
                     self.add_tok(Kind::Oper(Oper::Neq), pos.clone(), *end)
+                }
+                '!' => {
+                    let (_, end) = self.stream.next().unwrap();
+                    self.add_tok(Kind::Oper(Oper::Store), pos.clone(), *end)
+                }
+                '@' => {
+                    let (_, end) = self.stream.next().unwrap();
+                    self.add_tok(Kind::Oper(Oper::Load), pos.clone(), *end)
                 }
                 ' ' | '\n' => {}
                 _ => self.errors.push(format!(
@@ -423,6 +455,7 @@ fn compile_to_fams_x86_64(tokens: &[Token], filename: &str) -> std::io::Result<(
     out.write_all(b"    xor     ebx,ebx\n")?;
     out.write_all(b"    int     0x80\n")?;
     out.write_all(b"segment readable writeable\n")?;
+    out.write_all(format!("mem: rb {}\n", MEMORY).as_bytes())?;
     Ok(())
 }
 
@@ -505,7 +538,9 @@ fn keyword(
             out.write_all(b"    push     rdi\n")?;
             out.write_all(b"    push     rdx\n")?;
         }
-        KeyWord::Drop => out.write_all(b"    pop    rdx\n")?,
+        KeyWord::Drop => {
+            out.write_all(b"    pop      rdx\n")?;
+        }
         KeyWord::Max => {
             out.write_all(b"    pop      rdi\n")?;
             out.write_all(b"    pop      rsi\n")?;
@@ -514,7 +549,21 @@ fn keyword(
             out.write_all(b"    cmovge   rax,rdi\n")?;
             out.write_all(b"    push     rax\n")?;
         }
-        KeyWord::Memory => panic!("{}, Else is not implemeted.", span),
+        KeyWord::Memory => {
+            out.write_all(b"    push     mem\n")?;
+        }
+        KeyWord::SysCall1 => panic!("{} is not yet implemented yet.", kw),
+        KeyWord::SysCall2 => panic!("{} is not yet implemented yet.", kw),
+        KeyWord::SysCall3 => {
+            out.write_all(b"    pop      rax\n")?;
+            out.write_all(b"    pop      rdi\n")?;
+            out.write_all(b"    pop      rsi\n")?;
+            out.write_all(b"    pop      rdx\n")?;
+            out.write_all(b"    syscall\n")?;
+        }
+        KeyWord::SysCall4 => panic!("{} is not yet implemented yet.", kw),
+        KeyWord::SysCall5 => panic!("{} is not yet implemented yet.", kw),
+        KeyWord::SysCall6 => panic!("{} is not yet implemented yet.", kw),
     }
     Ok(())
 }
@@ -530,6 +579,16 @@ fn primitives(out: &mut std::fs::File, prim: &Prim, _span: Span) -> std::io::Res
 
 fn operators(out: &mut std::fs::File, op: &Oper, _span: Span) -> std::io::Result<()> {
     match op {
+        Oper::Store => {
+            out.write_all(b"    pop     rbx\n")?;
+            out.write_all(b"    pop     rax\n")?;
+            out.write_all(b"    mov     [rax],bl\n")?;
+        }
+        Oper::Load => {
+            out.write_all(b"    pop     rax\n")?;
+            out.write_all(b"    xor     rbx,rbx\n")?;
+            out.write_all(b"    mov     bl,[rax]\n")?;
+        }
         Oper::Plus => {
             out.write_all(b"    pop      rdi\n")?;
             out.write_all(b"    pop      rdx\n")?;
@@ -626,7 +685,7 @@ fn snack_source_file(filename: &str) -> Result<String, String> {
             Err(e) => Err(e.to_string()),
         }
     } else {
-        Err("This is not `snack` source file.".into())
+        Err(format!("`{}` is not `snack` source file.", filename))
     }
 }
 
@@ -636,7 +695,10 @@ fn main() {
     let mut idx_of_program_name = 0;
     for arg in arguments.iter() {
         match arg.as_str() {
-            "run" => run_flag = true,
+            "run" => {
+                run_flag = true;
+                idx_of_program_name += 1;
+            }
             _ => idx_of_program_name += 1,
         }
     }
@@ -645,7 +707,7 @@ fn main() {
         println!("No File given to compile.");
         std::process::exit(1);
     }
-    let filename = arguments[idx_of_program_name].to_string();
+    let filename = arguments[idx_of_program_name - 1].to_string();
     let src = snack_source_file(&filename).expect("Failed to open file.  Expected a Snack File.");
     let char_span = pos_enum(&src);
     let stream = char_span.iter().peekable();
@@ -665,15 +727,22 @@ fn main() {
         .arg(&filename)
         .output()
         .expect(&format!("Failed to compile [{}].", source_file));
-    print!(
-        "[-----PASS-----]\n{}",
-        String::from_utf8(fasm_output.stdout).unwrap_or("ERROR".into())
-    );
-    if run_flag {
-        let program_name = &filename.split('.').collect::<Vec<&str>>()[0];
-        std::process::Command::new(&format!("./{}", program_name))
-            .status()
-            // .spawn()
-            .expect(&format!("Failed to run [{}].", program_name));
+    if fasm_output.status.success() {
+        print!(
+            "[-----PASS-----]\n{}",
+            String::from_utf8(fasm_output.stdout).unwrap()
+        );
+        if run_flag {
+            let program_name = &filename.split('.').collect::<Vec<&str>>()[0];
+            std::process::Command::new(&format!("./{}", program_name))
+                .status()
+                // .spawn()
+                .expect(&format!("Failed to run [{}].", program_name));
+        }
+    } else {
+        print!(
+            "[-----FAIL-----]\n{}",
+            String::from_utf8(fasm_output.stderr).unwrap()
+        );
     }
 }

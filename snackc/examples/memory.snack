@@ -1,0 +1,15 @@
+memory 0  + 72 !
+memory 1  + 101 !
+memory 2  + 108 !
+memory 3  + 108 !
+memory 4  + 111 !
+memory 5  + 32 !
+memory 6  + 87 !
+memory 7  + 111 !
+memory 8  + 114 !
+memory 9  + 108 !
+memory 10 + 100 !
+memory 11 + 33 !
+memory 12 + 10 !
+
+13 memory 1 1 syscall3
