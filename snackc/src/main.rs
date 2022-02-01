@@ -4,8 +4,9 @@ use std::{fmt, iter::Peekable};
 
 const MEMORY: u32 = 640_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pos {
+    pub filename: String,
     pub idx: usize,
     pub row: usize,
     pub col: usize,
@@ -17,7 +18,7 @@ impl fmt::Display for Pos {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
     pub start: Pos,
     pub end: Pos,
@@ -146,12 +147,14 @@ impl fmt::Display for Oper {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Prim {
     Int(String),
+    String(String),
 }
 
 impl fmt::Display for Prim {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int(i) => write!(f, "Int({})", i),
+            Self::String(i) => write!(f, "String({})", i),
         }
     }
 }
@@ -228,6 +231,7 @@ impl<'a> Scanner<'a> {
         let unwrap = (
             '\0',
             Pos {
+                filename: "ERROR".into(),
                 idx: 0,
                 row: 0,
                 col: 0,
@@ -238,47 +242,48 @@ impl<'a> Scanner<'a> {
                 '/' if self.stream.peek().unwrap_or(&&&unwrap).0 == '/' => {
                     self.line_comment();
                 }
-                n if n.is_ascii_digit() => self.number(*c, *pos),
-                i if i.is_ascii_alphabetic() => self.identifier(*c, *pos),
-                '.' => self.add_tok(Kind::KeyWord(KeyWord::Dot), pos.clone(), *pos),
-                '+' => self.add_tok(Kind::Oper(Oper::Plus), pos.clone(), *pos),
-                '-' => self.add_tok(Kind::Oper(Oper::Minus), pos.clone(), *pos),
-                '/' => self.add_tok(Kind::Oper(Oper::Div), pos.clone(), *pos),
-                '%' => self.add_tok(Kind::Oper(Oper::Mod), pos.clone(), *pos),
-                '*' => self.add_tok(Kind::Oper(Oper::Mul), pos.clone(), *pos),
+                '"' => self.string(pos.clone()),
+                n if n.is_ascii_digit() => self.number(*c, pos.clone()),
+                i if i.is_ascii_alphabetic() => self.identifier(*c, pos.clone()),
+                '.' => self.add_tok(Kind::KeyWord(KeyWord::Dot), pos.clone(), pos.clone()),
+                '+' => self.add_tok(Kind::Oper(Oper::Plus), pos.clone(), pos.clone()),
+                '-' => self.add_tok(Kind::Oper(Oper::Minus), pos.clone(), pos.clone()),
+                '/' => self.add_tok(Kind::Oper(Oper::Div), pos.clone(), pos.clone()),
+                '%' => self.add_tok(Kind::Oper(Oper::Mod), pos.clone(), pos.clone()),
+                '*' => self.add_tok(Kind::Oper(Oper::Mul), pos.clone(), pos.clone()),
                 '>' if self.stream.peek().unwrap_or(&&unwrap).0 == '=' => {
                     let (_, end) = self.stream.next().unwrap();
-                    self.add_tok(Kind::Oper(Oper::Geq), pos.clone(), *end)
+                    self.add_tok(Kind::Oper(Oper::Geq), pos.clone(), end.clone())
                 }
                 '<' if self.stream.peek().unwrap_or(&&unwrap).0 == '=' => {
                     let (_, end) = self.stream.next().unwrap();
-                    self.add_tok(Kind::Oper(Oper::Leq), pos.clone(), *end)
+                    self.add_tok(Kind::Oper(Oper::Leq), pos.clone(), end.clone())
                 }
-                '>' => self.add_tok(Kind::Oper(Oper::Grt), pos.clone(), *pos),
-                '<' => self.add_tok(Kind::Oper(Oper::Les), pos.clone(), *pos),
+                '>' => self.add_tok(Kind::Oper(Oper::Grt), pos.clone(), pos.clone()),
+                '<' => self.add_tok(Kind::Oper(Oper::Les), pos.clone(), pos.clone()),
                 '=' if self.stream.peek().unwrap_or(&&unwrap).0 == '=' => {
                     let (_, end) = self.stream.next().unwrap();
-                    self.add_tok(Kind::Oper(Oper::Eq), pos.clone(), *end)
+                    self.add_tok(Kind::Oper(Oper::Eq), pos.clone(), end.clone())
                 }
                 '!' if self.stream.peek().unwrap_or(&&unwrap).0 == '=' => {
                     let (_, end) = self.stream.next().unwrap();
-                    self.add_tok(Kind::Oper(Oper::Neq), pos.clone(), *end)
+                    self.add_tok(Kind::Oper(Oper::Neq), pos.clone(), end.clone())
                 }
                 '!' => {
                     let (_, end) = self.stream.next().unwrap();
-                    self.add_tok(Kind::Oper(Oper::Store), pos.clone(), *end)
+                    self.add_tok(Kind::Oper(Oper::Store), pos.clone(), end.clone())
                 }
                 '@' => {
                     let (_, end) = self.stream.next().unwrap();
-                    self.add_tok(Kind::Oper(Oper::Load), pos.clone(), *end)
+                    self.add_tok(Kind::Oper(Oper::Load), pos.clone(), end.clone())
                 }
                 ' ' | '\n' => {}
                 _ => self.errors.push(format!(
                     "[{}:ERROR]: UnKnown Char: '{}'",
                     c,
                     Span {
-                        start: *pos,
-                        end: *pos,
+                        start: pos.clone(),
+                        end: pos.clone(),
                     }
                 )),
             }
@@ -296,9 +301,9 @@ impl<'a> Scanner<'a> {
 
     fn number(&mut self, c: char, start: Pos) {
         let mut number = c.to_string();
-        let mut end = start;
+        let mut end = start.clone();
         while let Some((c, pos)) = self.stream.next_if(|(c, _)| c.is_ascii_digit()) {
-            end = *pos;
+            end = pos.clone();
             number.push(*c);
         }
         self.tokens.push(Token::new(
@@ -306,11 +311,27 @@ impl<'a> Scanner<'a> {
             Span { start, end },
         ));
     }
+
+    fn string(&mut self, start: Pos) {
+        let mut string = String::new();
+        while let Some((c, _)) = self.stream.next_if(|(c, _)| c != &'"') {
+            string.push(*c);
+        }
+        let (_, end) = self.stream.next().unwrap();
+        self.tokens.push(Token::new(
+            Kind::Prim(Prim::String(string)),
+            Span {
+                start,
+                end: end.clone(),
+            },
+        ));
+    }
+
     fn identifier(&mut self, c: char, start: Pos) {
         let mut id = c.to_string();
-        let mut end = start;
+        let mut end = start.clone();
         while let Some((c, pos)) = self.stream.next_if(|(c, _)| c.is_ascii_alphanumeric()) {
-            end = *pos;
+            end = pos.clone();
             id.push(*c);
         }
         let kind = KeyWord::lookup(&id).map_or(Kind::Id(id), Kind::KeyWord);
@@ -370,8 +391,9 @@ impl<'a> Scanner<'a> {
     }
 }
 
-pub fn pos_enum<'a>(src: &'a str) -> Vec<(char, Pos)> {
+pub fn pos_enum<'a>(filename: &str, src: &'a str) -> Vec<(char, Pos)> {
     let mut pos = Pos {
+        filename: filename.into(),
         idx: 0,
         row: 0,
         col: 0,
@@ -384,7 +406,7 @@ pub fn pos_enum<'a>(src: &'a str) -> Vec<(char, Pos)> {
             pos.row = 0;
             pos.col += 1;
         }
-        spanned.push((c, pos));
+        spanned.push((c, pos.clone()));
     }
     spanned.clone()
 }
@@ -396,8 +418,9 @@ fn debug_title(out: &mut std::fs::File, token: &Token, comment: &str) -> std::io
 }
 
 fn compile_to_fams_x86_64(tokens: &[Token], filename: &str) -> std::io::Result<()> {
+    let mut data: Vec<(String, usize, String)> = Vec::new();
     let mut stream = tokens.iter().peekable();
-    let filename = format!("{}.asm", &filename.split('.').collect::<Vec<&str>>()[0]);
+    let filename = format!("{}.asm", remove_file_extension(&filename));
     let mut out = OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -446,15 +469,16 @@ fn compile_to_fams_x86_64(tokens: &[Token], filename: &str) -> std::io::Result<(
         debug_title(&mut out, &token, ";;")?;
         match &token.kind {
             Kind::Id(id) => panic!("{}: UnKnown KeyWord `{}`.", token.span, id),
-            Kind::KeyWord(kw) => keyword(&mut out, kw, token.span, token.jump, token.end)?,
-            Kind::Prim(prim) => primitives(&mut out, prim, token.span)?,
-            Kind::Oper(op) => operators(&mut out, op, token.span)?,
+            Kind::KeyWord(kw) => keyword(&mut out, kw, token.span.clone(), token.jump, token.end)?,
+            Kind::Prim(prim) => primitives(&mut out, prim, token.span.clone(), &mut data)?,
+            Kind::Oper(op) => operators(&mut out, op, token.span.clone())?,
         }
     }
     out.write_all(b"    mov     eax,1\n")?;
     out.write_all(b"    xor     ebx,ebx\n")?;
     out.write_all(b"    int     0x80\n")?;
     out.write_all(b"segment readable writeable\n")?;
+    reserve_data(&mut out, &mut data)?;
     out.write_all(format!("mem: rb {}\n", MEMORY).as_bytes())?;
     Ok(())
 }
@@ -568,10 +592,31 @@ fn keyword(
     Ok(())
 }
 
-fn primitives(out: &mut std::fs::File, prim: &Prim, _span: Span) -> std::io::Result<()> {
+fn primitives(
+    out: &mut std::fs::File,
+    prim: &Prim,
+    span: Span,
+    data: &mut Vec<(String, usize, String)>,
+) -> std::io::Result<()> {
     match prim {
         Prim::Int(v) => {
             out.write_all(format!("    push     {}\n", v).as_bytes())?;
+        }
+        Prim::String(string) => {
+            data.push((
+                remove_file_extension(&span.start.filename),
+                span.start.idx,
+                string.to_string(),
+            ));
+            out.write_all(format!("    push     {}\n", string.len()).as_bytes())?;
+            out.write_all(
+                format!(
+                    "    push     {}{}\n",
+                    remove_file_extension(&span.start.filename),
+                    span.start.idx
+                )
+                .as_bytes(),
+            )?;
         }
     }
     Ok(())
@@ -677,6 +722,22 @@ fn operators(out: &mut std::fs::File, op: &Oper, _span: Span) -> std::io::Result
     }
     Ok(())
 }
+//                                                Filename, idx, Data
+fn reserve_data(out: &mut std::fs::File, data: &[(String, usize, String)]) -> std::io::Result<()> {
+    // Filename + Idx of String in file
+    for (filename, idx, d) in data.iter() {
+        out.write_all(format!("{}{} db ", filename, idx).as_bytes())?;
+        for (i, byte) in d.as_bytes().iter().enumerate() {
+            if i != 0 {
+                out.write_all(format!(",{} ", byte).as_bytes())?;
+            } else {
+                out.write_all(format!("{} ", byte).as_bytes())?;
+            }
+        }
+        out.write_all(b"\n")?;
+    }
+    Ok(())
+}
 
 fn snack_source_file(filename: &str) -> Result<String, String> {
     if filename.ends_with(".snack") {
@@ -687,6 +748,10 @@ fn snack_source_file(filename: &str) -> Result<String, String> {
     } else {
         Err(format!("`{}` is not `snack` source file.", filename))
     }
+}
+
+fn remove_file_extension(filename: &str) -> String {
+    filename.split('.').collect::<Vec<&str>>()[0].to_string()
 }
 
 fn main() {
@@ -709,7 +774,7 @@ fn main() {
     }
     let filename = arguments[idx_of_program_name - 1].to_string();
     let src = snack_source_file(&filename).expect("Failed to open file.  Expected a Snack File.");
-    let char_span = pos_enum(&src);
+    let char_span = pos_enum(&filename, &src);
     let stream = char_span.iter().peekable();
     let scanner = Scanner::new(stream).lexer().link();
     // for token in scanner.tokens.iter() {
@@ -722,7 +787,7 @@ fn main() {
         std::process::exit(1);
     }
     compile_to_fams_x86_64(&scanner.tokens, &filename).unwrap();
-    let filename = format!("{}.asm", &filename.split('.').collect::<Vec<&str>>()[0]);
+    let filename = format!("{}.asm", remove_file_extension(&filename));
     let fasm_output = std::process::Command::new("fasm")
         .arg(&filename)
         .output()
@@ -733,7 +798,7 @@ fn main() {
             String::from_utf8(fasm_output.stdout).unwrap()
         );
         if run_flag {
-            let program_name = &filename.split('.').collect::<Vec<&str>>()[0];
+            let program_name = remove_file_extension(&filename);
             std::process::Command::new(&format!("./{}", program_name))
                 .status()
                 // .spawn()
