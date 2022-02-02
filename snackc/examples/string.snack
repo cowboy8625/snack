@@ -1,2 +1,1 @@
-// (Size of String), "Hello World!\n",
 "Hello World!\n" 1 1 syscall3

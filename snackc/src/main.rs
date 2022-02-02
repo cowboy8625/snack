@@ -228,6 +228,8 @@ impl<'a> Scanner<'a> {
     }
 
     pub fn lexer(mut self) -> Self {
+        // FIXME: PLEASE!
+        // Simple fix for bad planning.
         let unwrap = (
             '\0',
             Pos {
@@ -392,6 +394,9 @@ impl<'a> Scanner<'a> {
 }
 
 pub fn pos_enum<'a>(filename: &str, src: &'a str) -> Vec<(char, Pos)> {
+    let src = src.replace("\\r", "\r");
+    let src = src.replace("\\n", "\n");
+    let src = src.replace("\\t", "\t");
     let mut pos = Pos {
         filename: filename.into(),
         idx: 0,
@@ -729,9 +734,9 @@ fn reserve_data(out: &mut std::fs::File, data: &[(String, usize, String)]) -> st
         out.write_all(format!("{}{} db ", filename, idx).as_bytes())?;
         for (i, byte) in d.as_bytes().iter().enumerate() {
             if i != 0 {
-                out.write_all(format!(",{} ", byte).as_bytes())?;
+                out.write_all(format!(" ,{} ", byte).as_bytes())?;
             } else {
-                out.write_all(format!("{} ", byte).as_bytes())?;
+                out.write_all(format!("{}", byte).as_bytes())?;
             }
         }
         out.write_all(b"\n")?;
