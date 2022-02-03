@@ -7,7 +7,27 @@ which is inspired off of [forth](https://en.wikipedia.org/wiki/Forth_(programmin
 # Install
 
 To use Snack you will need [Rust](https://rustup.rs/) and [fasm](https://flatassembler.net/download.php)
-After installing Rust just run `cargo install --git https://github.com/cowboy8625/snack`
+After installing Rust just run 
+```
+git clone https://github.com/cowboy8625/snack
+cd snack/snackc
+cargo run --release -- run <file.snack>
+```
+or to install
+```
+cargo install --git https://github.com/cowboy8625/snack
+```
+
+
+# Snackc Args
+
+Args can be stacked.
+
+```
+run           Compiles and runs file.
+--debug       Gives debug output to assembly file.
+```
+
 and you all set.
 
 # Snackc Commands
