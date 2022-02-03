@@ -80,6 +80,7 @@ impl KeyWord {
             "use" => Some(Use),
             "proc" => Some(Proc),
             "in" => Some(In),
+            "const" => Some(Const),
             "while" => Some(While),
             "do" => Some(Do),
             "if" => Some(If),
@@ -432,9 +433,7 @@ impl<'a> Scanner<'a> {
                 Kind::KeyWord(KeyWord::Proc | KeyWord::While | KeyWord::Const | KeyWord::If)
                     if !stack.is_empty() =>
                 {
-                    let t = stack.pop().unwrap();
-                    tok.jump_mut(t.jump);
-                    tok.end_mut(t.end);
+                    tok.end_mut(Some(stack.pop().unwrap().id()));
                 }
                 Kind::KeyWord(
                     KeyWord::Const
