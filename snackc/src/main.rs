@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::{fmt, iter::Peekable};
 
 const MEMORY: u32 = 640_000;
+type Stream<'a, T> = Peekable<std::slice::Iter<'a, T>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pos {
@@ -12,9 +14,23 @@ pub struct Pos {
     pub col: usize,
 }
 
+impl Pos {
+    fn addr(&self) -> String {
+        format!(
+            "{}{}:\n",
+            remove_file_extension(&self.filename).replace("-", ""),
+            self.idx,
+        )
+    }
+
+    fn jump(&self) -> String {
+        format!("{}", remove_file_extension(&self.filename).replace("-", ""),)
+    }
+}
+
 impl fmt::Display for Pos {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}:{}", self.idx, self.row, self.col)
+        write!(f, "{}:{}:{}:", self.filename, self.col, self.row)
     }
 }
 
@@ -26,12 +42,16 @@ pub struct Span {
 
 impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}..{}", self.start, self.end)
+        write!(f, "{}", self.start)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyWord {
+    Use,
+    Proc,
+    In,
+    Const,
     While,
     Do,
     If,
@@ -57,6 +77,9 @@ impl KeyWord {
     pub fn lookup(name: &str) -> Option<Self> {
         use KeyWord::*;
         match name {
+            "use" => Some(Use),
+            "proc" => Some(Proc),
+            "in" => Some(In),
             "while" => Some(While),
             "do" => Some(Do),
             "if" => Some(If),
@@ -84,6 +107,10 @@ impl KeyWord {
 impl fmt::Display for KeyWord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Use => write!(f, "proc"),
+            Self::Proc => write!(f, "proc"),
+            Self::In => write!(f, "in"),
+            Self::Const => write!(f, "const"),
             Self::While => write!(f, "while"),
             Self::Do => write!(f, "do"),
             Self::If => write!(f, "if"),
@@ -154,7 +181,7 @@ impl fmt::Display for Prim {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Int(i) => write!(f, "Int({})", i),
-            Self::String(i) => write!(f, "String({})", i),
+            Self::String(i) => write!(f, "String({:?})", i),
         }
     }
 }
@@ -186,6 +213,24 @@ pub struct Token {
     pub end: Option<usize>,
 }
 
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let jump = self
+            .jump
+            .map(|j| format!(" jump: {}", j))
+            .unwrap_or("".into());
+        let end = self
+            .end
+            .map(|e| format!(" end: {}", e))
+            .unwrap_or("".into());
+        write!(
+            f,
+            "{} {} {}{}{}",
+            self.span, self.span.start.idx, self.kind, jump, end
+        )
+    }
+}
+
 impl Token {
     pub fn new(kind: Kind, span: Span) -> Self {
         Self {
@@ -196,8 +241,8 @@ impl Token {
         }
     }
 
-    pub fn with_jump(mut self, jump: usize) -> Self {
-        self.jump = Some(jump);
+    pub fn with_jump(mut self, jump: Option<usize>) -> Self {
+        self.jump = jump;
         self
     }
 
@@ -208,17 +253,21 @@ impl Token {
     pub fn end_mut(&mut self, end: Option<usize>) {
         self.end = end;
     }
+
+    pub fn id(&self) -> usize {
+        self.span.start.idx
+    }
 }
 
 pub struct Scanner<'a> {
-    stream: Peekable<std::slice::Iter<'a, (char, Pos)>>,
+    stream: Stream<'a, (char, Pos)>,
     pub tokens: Vec<Token>,
     pub errors: Vec<String>,
     whileloop: Vec<usize>,
 }
 
 impl<'a> Scanner<'a> {
-    pub fn new(stream: Peekable<std::slice::Iter<'a, (char, Pos)>>) -> Self {
+    pub fn new(stream: Stream<'a, (char, Pos)>) -> Self {
         Self {
             stream,
             tokens: Vec::new(),
@@ -281,12 +330,12 @@ impl<'a> Scanner<'a> {
                 }
                 ' ' | '\n' => {}
                 _ => self.errors.push(format!(
-                    "[{}:ERROR]: UnKnown Char: '{}'",
-                    c,
+                    "{} ERROR: UnKnown Char: '{}'",
                     Span {
                         start: pos.clone(),
                         end: pos.clone(),
-                    }
+                    },
+                    c,
                 )),
             }
         }
@@ -341,50 +390,66 @@ impl<'a> Scanner<'a> {
             self.whileloop.push(start.idx);
             self.tokens.push(Token::new(kind, Span { start, end }));
         } else if let Kind::KeyWord(KeyWord::End) = kind {
-            self.tokens.push(
-                Token::new(kind, Span { start, end }).with_jump(self.whileloop.pop().unwrap()),
-            );
+            self.tokens
+                .push(Token::new(kind, Span { start, end }).with_jump(self.whileloop.pop()));
         } else {
             self.tokens.push(Token::new(kind, Span { start, end }));
         }
     }
 
     pub fn link(mut self) -> Self {
-        let mut ends: Vec<usize> = Vec::new();
-        let mut next: Vec<usize> = Vec::new();
+        let mut stack: Vec<Token> = Vec::new();
         for tok in self.tokens.iter_mut().rev() {
-            let i = tok.span.start.idx;
             match tok.kind {
+                // End needs to know jump if its ending a while loop.
                 Kind::KeyWord(KeyWord::End) => {
-                    ends.push(i);
+                    stack.push(tok.clone());
                 }
-                // Else Needs to know end.
-                Kind::KeyWord(KeyWord::Else) if !ends.is_empty() => {
-                    tok.end_mut(ends.last().map(Clone::clone));
-                    next.push(i);
-                }
-                Kind::KeyWord(KeyWord::ElIf) if !ends.is_empty() => {
-                    if ends.len() == next.len() {
-                        tok.jump_mut(next.last().map(Clone::clone));
-                        tok.end_mut(ends.last().map(Clone::clone));
-                        next.last_mut().replace(&mut i.clone());
-                        let mut last = next.pop();
-                        last.replace(i);
-                        next.push(last.unwrap());
+                // Else needs to know end
+                Kind::KeyWord(KeyWord::Else) if !stack.is_empty() => {
+                    let last = stack.pop().unwrap();
+                    if last.kind == Kind::KeyWord(KeyWord::End) {
+                        tok.end_mut(Some(last.id()));
                     } else {
-                        next.push(i);
+                        tok.jump_mut(last.jump);
+                        tok.end_mut(last.end);
                     }
+                    stack.push(tok.clone());
                 }
-                Kind::KeyWord(KeyWord::If) if !ends.is_empty() => {
-                    tok.jump_mut(next.pop());
-                    tok.end_mut(ends.pop());
+                // ElIf needs to know just the jump
+                Kind::KeyWord(KeyWord::ElIf) if !stack.is_empty() => {
+                    let last = stack.pop().unwrap();
+                    tok.jump_mut(Some(last.id()));
+                    tok.end_mut(last.end);
+                    stack.push(tok.clone());
                 }
-                Kind::KeyWord(KeyWord::Do) if !ends.is_empty() => {
-                    tok.end_mut(ends.last().map(Clone::clone));
+                // Do needs to know end
+                Kind::KeyWord(KeyWord::Do) if !stack.is_empty() => {
+                    let last = stack.pop().unwrap();
+                    tok.end_mut(Some(last.id()));
+                    stack.push(tok.clone());
                 }
-                Kind::KeyWord(KeyWord::While) if !ends.is_empty() => {
-                    tok.jump_mut(next.pop());
-                    tok.end_mut(ends.pop());
+                Kind::KeyWord(KeyWord::Proc | KeyWord::While | KeyWord::Const | KeyWord::If)
+                    if !stack.is_empty() =>
+                {
+                    let t = stack.pop().unwrap();
+                    tok.jump_mut(t.jump);
+                    tok.end_mut(t.end);
+                }
+                Kind::KeyWord(
+                    KeyWord::Const
+                    | KeyWord::Proc
+                    | KeyWord::In
+                    | KeyWord::While
+                    | KeyWord::Do
+                    | KeyWord::If
+                    | KeyWord::ElIf
+                    | KeyWord::Else,
+                ) => {
+                    self.errors.push(format!(
+                        "{} Error: {} is missing 'end' closing block.",
+                        tok.span, tok.kind
+                    ));
                 }
                 _ => {}
             }
@@ -394,14 +459,17 @@ impl<'a> Scanner<'a> {
 }
 
 pub fn pos_enum<'a>(filename: &str, src: &'a str) -> Vec<(char, Pos)> {
+    // parse this by hand later.
     let src = src.replace("\\r", "\r");
     let src = src.replace("\\n", "\n");
     let src = src.replace("\\t", "\t");
+    let src = src.replace("\\x1b", "\x1b");
+
     let mut pos = Pos {
         filename: filename.into(),
         idx: 0,
         row: 0,
-        col: 0,
+        col: 1,
     };
     let mut spanned: Vec<(char, Pos)> = Vec::new();
     for (i, c) in src.chars().enumerate() {
@@ -416,15 +484,21 @@ pub fn pos_enum<'a>(filename: &str, src: &'a str) -> Vec<(char, Pos)> {
     spanned.clone()
 }
 
-#[cfg(feature = "debug")]
 fn debug_title(out: &mut std::fs::File, token: &Token, comment: &str) -> std::io::Result<()> {
-    out.write_all(format!("{}  === {} ===\n", comment, token.kind).as_bytes())?;
+    out.write_all(format!("{}  === {} ===\n", comment, token).as_bytes())?;
     Ok(())
 }
 
-fn compile_to_fams_x86_64(tokens: &[Token], filename: &str) -> std::io::Result<()> {
+fn compile_to_fams_x86_64(
+    debug_flag: bool,
+    tokens: &[Token],
+    filename: &str,
+) -> std::io::Result<Vec<String>> {
+    // Keep track of stack to know if it is empty
     let mut data: Vec<(String, usize, String)> = Vec::new();
+    let mut constants: HashMap<String, usize> = HashMap::new();
     let mut stream = tokens.iter().peekable();
+    let mut errors: Vec<String> = Vec::new();
     let filename = format!("{}.asm", remove_file_extension(&filename));
     let mut out = OpenOptions::new()
         .write(true)
@@ -470,11 +544,29 @@ fn compile_to_fams_x86_64(tokens: &[Token], filename: &str) -> std::io::Result<(
     out.write_all(b"entry start\n")?;
     out.write_all(b"start:\n")?;
     while let Some(token) = stream.next() {
-        #[cfg(feature = "debug")]
-        debug_title(&mut out, &token, ";;")?;
+        if debug_flag {
+            debug_title(&mut out, &token, ";;")?;
+        }
         match &token.kind {
-            Kind::Id(id) => panic!("{}: UnKnown KeyWord `{}`.", token.span, id),
-            Kind::KeyWord(kw) => keyword(&mut out, kw, token.span.clone(), token.jump, token.end)?,
+            // Turn this into a Value to put on the sack.
+            Kind::Id(id) => {
+                if let Some(i) = constants.get(id) {
+                    out.write_all(format!("    push     {}\n", i).as_bytes())?;
+                } else {
+                    errors.push(format!("{} Error: UnKnown variable `{}`.", token.span, id));
+                }
+            }
+            Kind::KeyWord(KeyWord::Const) => {
+                constant(&token, &mut stream, &mut constants, &mut errors)
+            }
+            Kind::KeyWord(kw) => keyword(
+                &mut out,
+                &mut errors,
+                kw,
+                token.span.clone(),
+                token.jump,
+                token.end,
+            )?,
             Kind::Prim(prim) => primitives(&mut out, prim, token.span.clone(), &mut data)?,
             Kind::Oper(op) => operators(&mut out, op, token.span.clone())?,
         }
@@ -485,64 +577,279 @@ fn compile_to_fams_x86_64(tokens: &[Token], filename: &str) -> std::io::Result<(
     out.write_all(b"segment readable writeable\n")?;
     reserve_data(&mut out, &mut data)?;
     out.write_all(format!("mem: rb {}\n", MEMORY).as_bytes())?;
-    Ok(())
+    Ok(errors)
+}
+
+fn constant<'a>(
+    const_token: &Token,
+    stream: &mut Stream<'a, Token>,
+    constants: &mut HashMap<String, usize>,
+    errors: &mut Vec<String>,
+) {
+    if let Some(token1) = stream.next() {
+        match &token1.kind {
+            Kind::Id(id1) => {
+                let mut stack: Vec<usize> = Vec::new();
+                while let Some(token2) = stream.next_if(|t| t.kind != Kind::KeyWord(KeyWord::End)) {
+                    match &token2.kind {
+                        Kind::Id(id2) => {
+                            if let Some(num) = constants.get(id2) {
+                                stack.push(*num);
+                            } else {
+                                errors.push(format!(
+                                    "{} Error: {} is not defined.",
+                                    token2.span, id2
+                                ));
+                            }
+                        }
+                        Kind::KeyWord(KeyWord::Const) => {
+                            errors
+                                .push(
+                                    format!("{} Error: `const` Keyword is not allowed in another `const` definition", token2.span)
+                                    );
+                            break;
+                        }
+                        Kind::KeyWord(_) => {}
+                        Kind::Prim(prim) => match prim {
+                            Prim::Int(i) => stack.push(i.parse().unwrap()),
+                            _ => errors.push(format!(
+                                "{} Error: Unsupported const Type <String>",
+                                token2.span,
+                            )),
+                        },
+                        Kind::Oper(op) => match op {
+                            Oper::Store => {
+                                errors.push(format!(
+                                        "{} Error: Unsupported {} operation in side a 'const declaration'.",
+                                        token2.span, token2.kind
+                                        ));
+                                break;
+                            }
+                            Oper::Load => {
+                                errors.push(format!(
+                                        "{} Error: Unsupported {} operation in side a 'const declaration'.",
+                                        token2.span, token2.kind
+                                        ));
+                                break;
+                            }
+                            Oper::Plus => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push(l + r);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Minus => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push(l - r);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Mul => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push(l * r);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Div => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push(l / r);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Mod => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push(l % r);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Grt => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push((l > r) as usize);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Geq => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push((l >= r) as usize);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Les => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push((l < r) as usize);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Leq => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push((l < r) as usize);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Neq => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push((l != r) as usize);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                            Oper::Eq => {
+                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                    stack.push((l == r) as usize);
+                                } else {
+                                    errors.push(format!(
+                                        "{} Error: Not enough items on stack to {} to.",
+                                        token2.span, token2.kind
+                                    ));
+                                    break;
+                                }
+                            }
+                        },
+                    }
+                }
+                if stack.is_empty() {
+                    errors.push(format!(
+                        "{} Error: Nothing to assine to '{}' const variable.",
+                        token1.span, id1
+                    ));
+                } else if stack.len() > 1 {
+                    errors.push(format!(
+                        "{} Error: To Many values to assine to '{}' const variable left on stack.",
+                        token1.span, id1
+                    ));
+                } else {
+                    constants.insert(id1.to_string(), stack.pop().unwrap());
+                }
+                let _ = stream.next();
+            }
+            _ => errors.push(format!(
+                "{} Error: No const variable name was give.",
+                const_token.span
+            )),
+        }
+    }
 }
 
 fn keyword(
     out: &mut std::fs::File,
+    errors: &mut Vec<String>,
     kw: &KeyWord,
     span: Span,
     jump: Option<usize>,
     end: Option<usize>,
 ) -> std::io::Result<()> {
     match kw {
+        KeyWord::Use => {
+            errors.push(format!("{} Error: use is not implemented yet.", span));
+        }
+        KeyWord::Proc => {
+            errors.push(format!("{} Error: proc is not implemented yet.", span));
+        }
+        KeyWord::In => {
+            errors.push(format!("{} Error: in is not implemented yet.", span));
+        }
         KeyWord::While => {
-            out.write_all(format!("address{}:\n", span.start.idx).as_bytes())?;
+            out.write_all(span.start.addr().as_bytes())?;
         }
         KeyWord::Do => {
             out.write_all(b"    pop      rbx\n")?;
             out.write_all(b"    test     rbx,rbx\n")?;
             if let Some(e) = end {
-                out.write_all(format!("    jz      address{}\n", e).as_bytes())?;
+                out.write_all(format!("    jz      {}{}\n", span.start.jump(), e).as_bytes())?;
+            } else {
+                errors.push(format!(
+                    "{} Error: Do block missing `end` closing block. This could be a compiler bug.",
+                    span,
+                ));
             }
         }
         KeyWord::If => {
             out.write_all(b"    pop      rbx\n")?;
             out.write_all(b"    test     rbx,rbx\n")?;
             if let Some(j) = jump {
-                out.write_all(format!("    jz     address{}\n", j).as_bytes())?;
+                out.write_all(format!("    jz     {}{}\n", span.start.jump(), j).as_bytes())?;
             }
         }
         KeyWord::ElIf => {
-            if let Some(e) = end {
-                out.write_all(format!("    jmp     address{}\n", e).as_bytes())?;
-            } else {
-                panic!("{}, If statement missing `end` closing block.", span);
-            }
-            out.write_all(format!("address{}:\n", span.start.idx).as_bytes())?;
+            out.write_all(span.start.addr().as_bytes())?;
             out.write_all(b"    pop     rbx\n")?;
             out.write_all(b"    test    rbx,rbx\n")?;
             if let Some(j) = jump {
-                out.write_all(format!("    jz    address{}\n", j).as_bytes())?;
+                out.write_all(format!("    jz       {}{}\n", span.start.jump(), j).as_bytes())?;
             } else if let Some(e) = end {
-                out.write_all(format!("    jz    address{}\n", e).as_bytes())?;
+                out.write_all(format!("    jz       {}{}\n", span.start.jump(), e).as_bytes())?;
             } else {
-                panic!("{}, If statement missing `end` closing block.", span);
+                errors.push(format!(
+                    "{} Error: elif statement missing `end` closing block.",
+                    span,
+                ));
             }
         }
         KeyWord::Else => {
             if let Some(e) = end {
-                out.write_all(format!("    jmp      address{}\n", e).as_bytes())?;
+                out.write_all(format!("    jmp      {}{}\n", span.start.jump(), e).as_bytes())?;
             } else {
-                panic!("{}, If statement missing `end` closing block.", span);
+                errors.push(format!(
+                    "{} Error: Else statement missing `end` closing block.",
+                    span,
+                ));
             }
-            out.write_all(format!("address{}:\n", span.start.idx).as_bytes())?;
+            out.write_all(span.start.addr().as_bytes())?;
         }
         KeyWord::End => {
             if let Some(j) = jump {
-                out.write_all(format!("    jmp      address{}\n", j).as_bytes())?;
+                out.write_all(format!("    jmp      {}{}\n", span.start.jump(), j).as_bytes())?;
             }
-            out.write_all(format!("address{}:\n", span.start.idx).as_bytes())?;
+            out.write_all(span.start.addr().as_bytes())?;
         }
         KeyWord::Dot => {
             out.write_all(b"    pop      rdi\n")?;
@@ -581,8 +888,14 @@ fn keyword(
         KeyWord::Memory => {
             out.write_all(b"    push     mem\n")?;
         }
-        KeyWord::SysCall1 => panic!("{} is not yet implemented yet.", kw),
-        KeyWord::SysCall2 => panic!("{} is not yet implemented yet.", kw),
+        KeyWord::SysCall1 => errors.push(format!(
+            "{} ERROR: {} is not yet implemented yet.",
+            span, kw
+        )),
+        KeyWord::SysCall2 => errors.push(format!(
+            "{} ERROR: {} is not yet implemented yet.",
+            span, kw
+        )),
         KeyWord::SysCall3 => {
             out.write_all(b"    pop      rax\n")?;
             out.write_all(b"    pop      rdi\n")?;
@@ -590,9 +903,19 @@ fn keyword(
             out.write_all(b"    pop      rdx\n")?;
             out.write_all(b"    syscall\n")?;
         }
-        KeyWord::SysCall4 => panic!("{} is not yet implemented yet.", kw),
-        KeyWord::SysCall5 => panic!("{} is not yet implemented yet.", kw),
-        KeyWord::SysCall6 => panic!("{} is not yet implemented yet.", kw),
+        KeyWord::SysCall4 => errors.push(format!(
+            "{} ERROR: {} is not yet implemented yet.",
+            span, kw
+        )),
+        KeyWord::SysCall5 => errors.push(format!(
+            "{} ERROR: {} is not yet implemented yet.",
+            span, kw
+        )),
+        KeyWord::SysCall6 => errors.push(format!(
+            "{} ERROR: {} is not yet implemented yet.",
+            span, kw
+        )),
+        _ => unreachable!(),
     }
     Ok(())
 }
@@ -616,9 +939,12 @@ fn primitives(
             out.write_all(format!("    push     {}\n", string.len()).as_bytes())?;
             out.write_all(
                 format!(
-                    "    push     {}{}\n",
-                    remove_file_extension(&span.start.filename),
-                    span.start.idx
+                    "    push     {}\n",
+                    format!(
+                        "data{}{}",
+                        remove_file_extension(&span.start.filename).replace("-", ""),
+                        span.start.idx
+                    )
                 )
                 .as_bytes(),
             )?;
@@ -731,10 +1057,10 @@ fn operators(out: &mut std::fs::File, op: &Oper, _span: Span) -> std::io::Result
 fn reserve_data(out: &mut std::fs::File, data: &[(String, usize, String)]) -> std::io::Result<()> {
     // Filename + Idx of String in file
     for (filename, idx, d) in data.iter() {
-        out.write_all(format!("{}{} db ", filename, idx).as_bytes())?;
+        out.write_all(format!("data{}{} db ", filename.replace("-", ""), idx).as_bytes())?;
         for (i, byte) in d.as_bytes().iter().enumerate() {
             if i != 0 {
-                out.write_all(format!(" ,{} ", byte).as_bytes())?;
+                out.write_all(format!(" ,{}", byte).as_bytes())?;
             } else {
                 out.write_all(format!("{}", byte).as_bytes())?;
             }
@@ -761,37 +1087,54 @@ fn remove_file_extension(filename: &str) -> String {
 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
-    let mut run_flag = false;
+    let run_flag = arguments.contains(&"run".into());
+    let debug_flag = arguments.contains(&"--debug".into());
     let mut idx_of_program_name = 0;
-    for arg in arguments.iter() {
-        match arg.as_str() {
-            "run" => {
-                run_flag = true;
-                idx_of_program_name += 1;
+    for (i, arg) in arguments.iter().enumerate() {
+        match (i, arg.as_str()) {
+            (_, "run" | "--debug") => {}
+            (i, _) if i != 0 => {
+                idx_of_program_name = i;
+                break;
             }
-            _ => idx_of_program_name += 1,
+            _ => {}
         }
     }
-    let source_file = arguments[0].to_string();
-    if arguments.len() < 2 {
+    if arguments.len() < 1 {
         println!("No File given to compile.");
         std::process::exit(1);
     }
-    let filename = arguments[idx_of_program_name - 1].to_string();
+    let source_file = arguments[0].to_string();
+    let filename = arguments[idx_of_program_name].to_string();
     let src = snack_source_file(&filename).expect("Failed to open file.  Expected a Snack File.");
     let char_span = pos_enum(&filename, &src);
     let stream = char_span.iter().peekable();
     let scanner = Scanner::new(stream).lexer().link();
-    // for token in scanner.tokens.iter() {
-    //     println!("{:?}", token);
-    // }
+
+    if debug_flag {
+        for token in scanner.tokens.iter() {
+            println!("{}", token);
+        }
+    }
+
     if !scanner.errors.is_empty() {
         for e in scanner.errors.iter() {
             println!("{}", e);
         }
         std::process::exit(1);
     }
-    compile_to_fams_x86_64(&scanner.tokens, &filename).unwrap();
+    match compile_to_fams_x86_64(debug_flag, &scanner.tokens, &filename) {
+        Ok(errors) => {
+            for e in errors.iter() {
+                println!("{}", e);
+                std::process::exit(1);
+            }
+        }
+        Err(error) => {
+            eprintln!("{}", error);
+            std::process::exit(1);
+        }
+    }
     let filename = format!("{}.asm", remove_file_extension(&filename));
     let fasm_output = std::process::Command::new("fasm")
         .arg(&filename)

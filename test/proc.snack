@@ -1,0 +1,5 @@
+proc helloworld in
+    "Hello World!\n" 1 1 syscall3
+end
+
+helloworld

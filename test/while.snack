@@ -6,5 +6,7 @@
         1 +
     end drop
     // increment count
+    copy .
     1 +
 end
+.

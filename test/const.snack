@@ -1,0 +1,20 @@
+const N 100 end
+const X N 100 + end
+const Y N X + 100 + end
+
+N N + .
+X N * .
+Y .
+
+
+
+
+
+
+
+
+
+
+
+
+
