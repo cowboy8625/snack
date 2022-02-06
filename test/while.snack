@@ -1,12 +1,15 @@
-0 while copy 10 < do
-    copy .
+// While loops busted something to do with end block
+word main in
     0 while copy 10 < do
         copy .
+        0 while copy 10 < do
+            copy .
+            // increment count
+            1 +
+        end drop
         // increment count
+        copy .
         1 +
-    end drop
-    // increment count
-    copy .
-    1 +
+    end
+    .
 end
-.

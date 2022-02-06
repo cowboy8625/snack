@@ -1,1 +1,4 @@
+// Figure out how to detect if you are in a tty
+word main in
 "\x1b[31mRED\x1b[0mNO COLOR" 1 1 syscall3
+end
