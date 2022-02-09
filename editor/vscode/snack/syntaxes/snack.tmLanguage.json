@@ -1,0 +1,32 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Snack",
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#strings"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [{
+				"name": "keyword.control.snack",
+				"match": "\\b(if|elif|else|do|true|false|let|copy|swap|drop|over|rot|while|end|or|not|and|memory|const|word|in|use|println|print|max|syscall1|syscall2|syscall3|syscall4|syscall5|syscall6)\\b"
+			}]
+		},
+		"strings": {
+			"name": "string.quoted.double.snack",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.snack",
+					"match": "\\\\."
+				}
+			]
+		}
+	},
+	"scopeName": "source.snack"
+}

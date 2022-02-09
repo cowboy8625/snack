@@ -1,0 +1,25 @@
+{
+    "name": "snack",
+    "displayName": "snack",
+    "description": "Snack Programming Language",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.64.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [{
+            "id": "snack",
+            "aliases": ["Snack", "snack"],
+            "extensions": [".snack"],
+            "configuration": "./language-configuration.json"
+        }],
+        "grammars": [{
+            "language": "snack",
+            "scopeName": "source.snack",
+            "path": "./syntaxes/snack.tmLanguage.json"
+        }]
+    }
+}
