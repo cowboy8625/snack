@@ -19,13 +19,20 @@ impl Pos {
     fn addr(&self) -> String {
         format!(
             "{}{}:\n",
-            remove_file_extension(&self.filename).replace("-", ""),
+            remove_file_extension(&self.filename)
+                .replace("-", "")
+                .replace("/", ""),
             self.idx,
         )
     }
 
     fn jump(&self) -> String {
-        format!("{}", remove_file_extension(&self.filename).replace("-", ""),)
+        format!(
+            "{}",
+            remove_file_extension(&self.filename)
+                .replace("-", "")
+                .replace("/", ""),
+        )
     }
 }
 
@@ -260,8 +267,8 @@ impl fmt::Display for Token {
             .unwrap_or("".into());
         write!(
             f,
-            "{} {} {}{}{}",
-            self.span, self.span.start.idx, self.kind, jump, end
+            "{} idx: {} kind: {} ret: {}{}{}",
+            self.span, self.span.start.idx, self.kind, self.ret, jump, end
         )
     }
 }
@@ -465,16 +472,27 @@ impl<'a> Scanner<'a> {
             id.push(*c);
         }
         let kind = KeyWord::lookup(&id).map_or(Kind::Id(id), Kind::KeyWord);
-        if let Kind::KeyWord(KeyWord::While | KeyWord::Word) = kind {
+        if let Kind::KeyWord(KeyWord::While | KeyWord::Word | KeyWord::Const | KeyWord::If) = kind {
             self.block.push((start.idx, kind.clone()));
             self.tokens.push(Token::new(kind, Span { start, end }));
         } else if let Kind::KeyWord(KeyWord::End) = kind {
             if let Some((i, k)) = self.block.pop() {
-                self.tokens.push(
-                    Token::new(kind, Span { start, end })
-                        .with_jump(Some(i))
-                        .with_ret(true),
-                );
+                match k {
+                    Kind::KeyWord(KeyWord::Word) => {
+                        self.tokens.push(
+                            Token::new(kind, Span { start, end })
+                                .with_jump(Some(i))
+                                .with_ret(true),
+                        );
+                    }
+                    Kind::KeyWord(KeyWord::If) => {
+                        self.tokens.push(Token::new(kind, Span { start, end }));
+                    }
+                    _ => {
+                        self.tokens
+                            .push(Token::new(kind, Span { start, end }).with_jump(Some(i)));
+                    }
+                }
             } else {
                 self.tokens.push(Token::new(kind, Span { start, end }));
             }
@@ -515,10 +533,18 @@ impl<'a> Scanner<'a> {
                     tok.end_mut(Some(last.id()));
                     stack.push(tok.clone());
                 }
-                Kind::KeyWord(KeyWord::Word | KeyWord::While | KeyWord::Const | KeyWord::If)
+                Kind::KeyWord(KeyWord::If)
                     if !stack.is_empty() =>
                     {
-                        tok.end_mut(Some(stack.pop().unwrap().id()));
+                    let last = stack.pop().unwrap();
+                        tok.end_mut(Some(last.id()));
+                        tok.jump_mut(Some(last.id()));
+                    }
+                Kind::KeyWord(KeyWord::Word | KeyWord::While | KeyWord::Const)
+                    if !stack.is_empty() =>
+                    {
+                    let last = stack.pop().unwrap();
+                        tok.end_mut(Some(last.id()));
                     }
                 Kind::KeyWord(
                     KeyWord::Const
@@ -1097,11 +1123,12 @@ fn keyword<'a>(
         KeyWord::End => {
             if let (Some(j), false) = (jump, token.ret) {
                 out.write_all(format!("    jmp      {}{}\n", span.start.jump(), j).as_bytes())?;
+            } else if let Some(e) = end {
+                out.write_all(span.start.addr().as_bytes())?;
             }
+            out.write_all(span.start.addr().as_bytes())?;
             if token.ret {
                 out.write_all(b"    ret\n")?;
-            } else {
-                out.write_all(span.start.addr().as_bytes())?;
             }
         }
         KeyWord::Dot => {
@@ -1367,7 +1394,7 @@ impl Flags {
         let arguments: Vec<String> = std::env::args().collect();
         if arguments.len() <= 1 {
             println!("No File given to compile.");
-            std::process::exit(1);
+            std::process::exit(2);
         }
         let run = arguments.contains(&"run".into());
         let debug = arguments.contains(&"--debug".into());
@@ -1407,7 +1434,7 @@ fn printhelp(flags: &Flags) {
         println!("--debug               :Puts Debug info into output and 'asm' file.");
         println!("  run                 :Compiles program and runs.");
         println!("--help                :Prints this help message.");
-        std::process::exit(1);
+        std::process::exit(2);
     }
 }
 
@@ -1422,27 +1449,27 @@ fn main() {
 
     if flags.debug {
         for token in scanner.tokens.iter() {
-            println!("{}", token);
+            eprintln!("{}", token);
         }
     }
 
     if !scanner.errors.is_empty() {
         println!("------------ Failure to compile -----------");
         for e in scanner.errors.iter() {
-            println!("{}", e);
+            eprintln!("{}", e);
         }
-        std::process::exit(1);
+        std::process::exit(2);
     }
     match compile_to_fams_x86_64(&flags, &mut scanner.tokens) {
         Ok(errors) => {
             for e in errors.iter() {
-                println!("{}", e);
-                std::process::exit(1);
+                eprintln!("{}", e);
+                std::process::exit(2);
             }
         }
         Err(error) => {
             eprintln!("{}", error);
-            std::process::exit(1);
+            std::process::exit(2);
         }
     }
     let filename = format!("{}.asm", flags.name());
@@ -1460,9 +1487,10 @@ fn main() {
                 .expect(&format!("Failed to run [{}].", program_name));
         }
     } else {
-        print!(
+        eprint!(
             "[-----FAIL-----]\n{}",
             String::from_utf8(fasm_output.stderr).unwrap()
         );
+        std::process::exit(2);
     }
 }
