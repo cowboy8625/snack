@@ -2,19 +2,16 @@
 " Language: snack
 " Maintainer: Cowboy8625
 " Latest Revision: Fri 14 Jan 2022
-"
-" Place this line of code in your .vimrc or init.vim file to get highlighting to
-" work.
-" autocmd BufRead,BufNewFile *.snack set filetype=snack
-
 
 if exists("b:current_syntax")
   finish
 endif
 
-syn keyword snackKeyword if elif else do true false let copy swap drop over rot while end or not and memory
+syn keyword snackKeyword if elif else do true false let copy swap drop over rot
+syn keyword snackKeyword while end or not and memory const word in use
 
 syn keyword snackFunction println print max
+syn keyword snackFunction syscall1 syscall2 syscall3 syscall4 syscall5 syscall6
 
 hi link snackKeyword Keyword
 hi link snackFunction Function
