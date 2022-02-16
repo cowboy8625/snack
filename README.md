@@ -3,6 +3,12 @@
 The language that eats the stack.  Heavily inspired by [porth](https://gitlab.com/tsoding/porth/)
 which is inspired off of [forth](https://en.wikipedia.org/wiki/Forth_(programming_language))
 
+The source code of this compiler is really really really sloppy and I know it.  This was just a project to get the
+language working and not a project to worry about design of the compiler.   I plan on throwing the compiler out
+in rust any way. Having the language self hosted is the ultimate goal without the use of
+[fasm](https://flatassembler.net/download.php).  The knolage I get from this project I will put in use for another
+language project I am working on.
+
 
 # Install
 
