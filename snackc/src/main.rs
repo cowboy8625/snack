@@ -580,7 +580,7 @@ impl fmt::Display for Value {
     }
 }
 
-fn compile_to_fams_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Result<Vec<String>> {
+fn compile_to_fasm_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Result<Vec<String>> {
     let filename = format!("{}.asm", flags.name());
     let mut out = OpenOptions::new()
         .write(true)
@@ -774,6 +774,7 @@ fn prologue(out: &mut std::fs::File) -> std::io::Result<()> {
     out.write_all(b"    mov      rbp, rsp\n")?;
     Ok(())
 }
+
 fn arg_gen(out: &mut std::fs::File, counter: usize) -> std::io::Result<()> {
     assert!(counter <= 2);
     let args: [&str; 2] = ["edi", "esi"];
@@ -803,6 +804,7 @@ fn call(out: &mut std::fs::File, name: &str, count: usize) -> std::io::Result<()
     out.write_all(format!("    call     {}\n", name).as_bytes())?;
     Ok(())
 }
+
 fn kind<'a>(
     out: &mut std::fs::File,
     flags: &Flags,
@@ -1056,10 +1058,21 @@ fn keyword<'a>(
 ) -> std::io::Result<()> {
     match kw {
         KeyWord::Use => {
-            errors.push(format!(
-                "{} CompilerUseError: This part of the compiler should not see this token.",
-                span
-            ));
+            if let Some(Token {
+                kind: Kind::Id(name),
+                ..
+            }) = stream.next()
+            {
+                let filename = snack_source_file(&format!("{}", name))
+                    .expect("Failed to Open imported Use File.");
+                let (token, errs) = scanner(&filename);
+                if !errs.is_empty() {
+                    errors.extend_from_slice(&errs);
+                    return Ok(());
+                }
+            } else {
+                errors.push(format!("{} Error: Use requires path", span,));
+            }
         }
         KeyWord::Word => {
             word(out, token, stream, variable, errors)?;
@@ -1429,29 +1442,32 @@ fn printhelp(flags: &Flags) {
     }
 }
 
+fn scanner(filename: &str) -> (Vec<Token>, Vec<String>) {
+    let src = snack_source_file(filename).expect("Failed to open file.  Expected a Snack File.");
+    let char_span = pos_enum(filename, &src);
+    let stream = char_span.iter().peekable();
+    let scanner = Scanner::new(stream).lexer().link();
+    (scanner.tokens, scanner.errors)
+}
+
 fn main() {
     let flags = Flags::new();
     printhelp(&flags);
-    let src =
-        snack_source_file(&flags.name_ext()).expect("Failed to open file.  Expected a Snack File.");
-    let char_span = pos_enum(&flags.name_ext(), &src);
-    let stream = char_span.iter().peekable();
-    let mut scanner = Scanner::new(stream).lexer().link();
-
+    let (mut tokens, errors) = scanner(&flags.name_ext());
     if flags.debug {
-        for token in scanner.tokens.iter() {
+        for token in tokens.iter() {
             eprintln!("{}", token);
         }
     }
 
-    if !scanner.errors.is_empty() {
+    if !errors.is_empty() {
         println!("------------ Failure to compile -----------");
-        for e in scanner.errors.iter() {
+        for e in errors.iter() {
             eprintln!("{}", e);
         }
         std::process::exit(2);
     }
-    match compile_to_fams_x86_64(&flags, &mut scanner.tokens) {
+    match compile_to_fasm_x86_64(&flags, &mut tokens) {
         Ok(errors) => {
             for e in errors.iter() {
                 eprintln!("{}", e);
