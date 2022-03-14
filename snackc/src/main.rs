@@ -1,5 +1,5 @@
-#![allow(unused)]
 use std::collections::HashMap;
+// use std::env::args;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::{fmt, iter::Peekable};
@@ -27,12 +27,10 @@ impl Pos {
     }
 
     fn jump(&self) -> String {
-        format!(
-            "{}",
-            remove_file_extension(&self.filename)
-                .replace("-", "")
-                .replace("/", ""),
-        )
+        remove_file_extension(&self.filename)
+            .replace("-", "")
+            .replace("/", "")
+            .to_string()
     }
 }
 
@@ -53,32 +51,6 @@ impl fmt::Display for Span {
         write!(f, "{}", self.start)
     }
 }
-
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum EndKind {
-//     Const(usize),
-//     Word(usize),
-//     While(usize),
-//     Do(usize),
-//     If(usize),
-//     ElIf(usize),
-//     Else(usize),
-//     UnBound,
-// }
-// impl fmt::Display for EndKind {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match self {
-//             Self::Word(i) => write!(f, "to word at {}", i),
-//             Self::Const(i) => write!(f, "to const at {}", i),
-//             Self::While(i) => write!(f, "to while at {}", i),
-//             Self::Do(i) => write!(f, "to do at {}", i),
-//             Self::If(i) => write!(f, "to if at {}", i),
-//             Self::ElIf(i) => write!(f, "to elif at {}", i),
-//             Self::Else(i) => write!(f, "to else at {}", i),
-//             Self::UnBound => write!(f, "unbound"),
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyWord {
@@ -451,8 +423,7 @@ impl<'a> Scanner<'a> {
                     .replace("\\n", "\n")
                     .replace("\\t", "\t")
                     .replace("\\r", "\r")
-                    .replace("\\x1b", "\x1b")
-                    .into(),
+                    .replace("\\x1b", "\x1b"),
             )),
             Span {
                 start,
@@ -536,14 +507,14 @@ impl<'a> Scanner<'a> {
                 Kind::KeyWord(KeyWord::If)
                     if !stack.is_empty() =>
                     {
-                    let last = stack.pop().unwrap();
+                        let last = stack.pop().unwrap();
                         tok.end_mut(Some(last.id()));
                         tok.jump_mut(Some(last.id()));
                     }
                 Kind::KeyWord(KeyWord::Word | KeyWord::While | KeyWord::Const)
                     if !stack.is_empty() =>
                     {
-                    let last = stack.pop().unwrap();
+                        let last = stack.pop().unwrap();
                         tok.end_mut(Some(last.id()));
                     }
                 Kind::KeyWord(
@@ -597,14 +568,14 @@ fn debug_title(out: &mut std::fs::File, token: &Token, comment: &str) -> std::io
 #[derive(Debug, Clone, Hash)]
 enum Value {
     Const(usize),
-    Word(String),
+    Word(String, usize),
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Const(i) => write!(f, "{}", i),
-            Self::Word(name) => write!(f, "{}", name),
+            Self::Word(name, count) => write!(f, "{}, {}", name, count),
         }
     }
 }
@@ -693,33 +664,10 @@ fn compile_to_fams_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Re
         }
         words.insert(wordname, wordtok);
     }
-    // Pull out const variable then check.
-    // if !tokens.is_empty() {
-    //     for token in tokens.iter() {
-    //         match token.kind {
-    //             Kind::Id(_) => {
-    //                 errors
-    //                     .push(
-    //                         format!(
-    //                             "{} No{}OutOfMainError: The <{}> Type is not allowed to be out of a word declaration.",
-    //                             token.span,
-    //                             token.kind
-    //                             .to_string()
-    //                             .to_uppercase(),
-    //                             token.kind
-    //                         ));
-    //             }
-    //             _ => {}
-    //         }
-    //     }
-    //     if !errors.is_empty() {
-    //         return Ok(errors);
-    //     }
-    // }
     if !words.contains_key("main") {
         errors.push("NoMainError: Main entry point must be declared.".into());
     }
-    let mut stream = tokens.iter().peekable();
+    // let stream = tokens.iter().peekable();
 
     // Write all Word declaration above main label.
 
@@ -732,11 +680,9 @@ fn compile_to_fams_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Re
         &mut data,
         &mut global_dec,
     )?;
-    for (name, tokens) in words.iter()
-    // .filter(|(name, _)| name != &&"main".to_string())
-    {
+    for (name, tokens) in words.iter() {
         if name != &"main".to_string() {
-            let mut stream = tokens.iter().peekable();
+            // let stream = tokens.iter().peekable();
             // Look up table for all Const values.
             kind(
                 &mut out,
@@ -770,6 +716,17 @@ fn compile_to_fams_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Re
     Ok(errors)
 }
 
+// fn arguments<'a>(stream: &mut Stream<'a, Token>, errors: &mut Vec<String>) -> Vec<String> {
+//     let mut a = Vec::new();
+//     while let Some(token) = stream.next_if(|tok| matches!(tok.kind, Kind::Id(_))) {
+//         let name = match &token.kind {
+//             Kind::Id(name) => a.push(name.to_string()),
+//             _ => unreachable!(),
+//         };
+//     }
+//     a
+// }
+
 fn word<'a>(
     out: &mut std::fs::File,
     wordtok: &Token,
@@ -780,15 +737,23 @@ fn word<'a>(
     if let Some(tokenid) = stream.next() {
         match &tokenid.kind {
             Kind::Id(name) => {
+                let mut arg_count = 0;
                 if !global_dec.contains_key(name) {
                     out.write_all(format!("{}:\n", name).as_bytes())?;
-                    global_dec.insert(name.clone(), Value::Word(name.clone()));
+                // arguments(stream, errors)
                 } else {
                     errors.push(format!(
                         "{} NameAlreadyDefinedError: {} is already defind.",
                         tokenid.span, tokenid.kind
                     ));
                 }
+                while let Some(_name) = stream.next_if(|tok| tok.kind != Kind::KeyWord(KeyWord::In))
+                {
+                    arg_count += 1;
+                }
+                global_dec.insert(name.clone(), Value::Word(name.clone(), arg_count));
+                prologue(out)?;
+                arg_gen(out, arg_count)?;
             }
             _ => errors.push(format!(
                 "{} NoWordIdError: found {} ",
@@ -804,6 +769,40 @@ fn word<'a>(
     Ok(())
 }
 
+fn prologue(out: &mut std::fs::File) -> std::io::Result<()> {
+    out.write_all(b"    push     rbp\n")?;
+    out.write_all(b"    mov      rbp, rsp\n")?;
+    Ok(())
+}
+fn arg_gen(out: &mut std::fs::File, counter: usize) -> std::io::Result<()> {
+    assert!(counter <= 2);
+    let args: [&str; 2] = ["edi", "esi"];
+    let ret: [&str; 2] = ["ax", "bx"];
+    for idx in 0..counter {
+        out.write_all(
+            format!("    mov      dword [rbp-{}],{}\n", (idx * 4) + 4, args[idx]).as_bytes(),
+        )?;
+        out.write_all(
+            format!("    mov      e{},dword [rbp-{}]\n", ret[idx], (idx * 4) + 4).as_bytes(),
+        )?;
+    }
+    for idx in 0..counter {
+        out.write_all(format!("    push      r{}\n", ret[idx]).as_bytes())?;
+    }
+    Ok(())
+}
+
+fn call(out: &mut std::fs::File, name: &str, count: usize) -> std::io::Result<()> {
+    if count > 2 {
+        panic!("We don't know how to handle more arguments");
+    }
+    let args: [&str; 2] = ["rdi", "rsi"];
+    for reg in args[0..count].iter().rev() {
+        out.write_all(format!("    pop     {}\n", reg).as_bytes())?;
+    }
+    out.write_all(format!("    call     {}\n", name).as_bytes())?;
+    Ok(())
+}
 fn kind<'a>(
     out: &mut std::fs::File,
     flags: &Flags,
@@ -822,7 +821,7 @@ fn kind<'a>(
             Kind::Id(id) => match global_dec.get(id) {
                 Some(v) => match v {
                     Value::Const(i) => out.write_all(format!("    push     {}\n", i).as_bytes())?,
-                    Value::Word(i) => out.write_all(format!("    call     {}\n", id).as_bytes())?,
+                    Value::Word(name, count) => call(out, name, *count)?,
                 },
                 _ => errors.push(format!("{} Error: UnKnown variable `{}`.", token.span, id)),
             },
@@ -1064,14 +1063,8 @@ fn keyword<'a>(
         }
         KeyWord::Word => {
             word(out, token, stream, variable, errors)?;
-            // errors.push(format!(
-            //     "{} CompilerWordError: keyword word not reachable.",
-            //     span
-            // ));
         }
-        KeyWord::In => {
-            //errors.push(format!("{} Error: in is not implemented yet.", span));
-        }
+        KeyWord::In => {}
         KeyWord::While => {
             out.write_all(span.start.addr().as_bytes())?;
         }
@@ -1123,11 +1116,12 @@ fn keyword<'a>(
         KeyWord::End => {
             if let (Some(j), false) = (jump, token.ret) {
                 out.write_all(format!("    jmp      {}{}\n", span.start.jump(), j).as_bytes())?;
-            } else if let Some(e) = end {
+            } else if let Some(_e) = end {
                 out.write_all(span.start.addr().as_bytes())?;
             }
             out.write_all(span.start.addr().as_bytes())?;
             if token.ret {
+                out.write_all(b"    pop      rbp\n")?;
                 out.write_all(b"    ret\n")?;
             }
         }
@@ -1226,14 +1220,11 @@ fn primitives(
             out.write_all(format!("    push     {}\n", string.len()).as_bytes())?;
             out.write_all(
                 format!(
-                    "    push     {}\n",
-                    format!(
-                        "data{}{}",
-                        remove_file_extension(&span.start.filename)
-                            .replace("-", "")
-                            .replace("/", ""),
-                        span.start.idx
-                    )
+                    "    push     data{}{}\n",
+                    remove_file_extension(&span.start.filename)
+                        .replace("-", "")
+                        .replace("/", ""),
+                    span.start.idx
                 )
                 .as_bytes(),
             )?;
@@ -1264,7 +1255,7 @@ fn operators(out: &mut std::fs::File, op: &Oper, _span: Span) -> std::io::Result
             out.write_all(b"    pop      rdi\n")?;
             out.write_all(b"    pop      rdx\n")?;
             out.write_all(b"    sub      rdx,rdi\n")?;
-            out.write_all(b"    push     rdi\n")?;
+            out.write_all(b"    push     rdx\n")?;
         }
         Oper::Mul => {
             out.write_all(b"    pop     rax\n")?;

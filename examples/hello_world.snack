@@ -1,1 +1,11 @@
-"Hello World!\n" 1 1 syscall3
+word helloWorld in
+    0 while copy 10 < do
+        "Hello World!\n" 1 1 syscall3
+        1 +
+    end
+    drop
+end
+
+word main in
+    helloWorld
+end

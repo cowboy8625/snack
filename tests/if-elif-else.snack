@@ -1,4 +1,3 @@
-// Fix this, Something in end block messed up when fixing function
 word main in
     1 2 == if // false
         "FALSE: First If\n" 1 1 syscall3

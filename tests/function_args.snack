@@ -1,0 +1,7 @@
+word write len ptr in
+    1 1 syscall3
+end
+
+word main in
+    "Hello World\n" write
+end
