@@ -7,6 +7,60 @@ use std::{fmt, iter::Peekable};
 const MEMORY: u32 = 640_000;
 type Stream<'a, T> = Peekable<std::slice::Iter<'a, T>>;
 
+#[derive(Debug, Default)]
+struct Streamer<T> {
+    tokens: Vec<T>,
+    tp: usize,
+}
+
+impl<T> Streamer<T>
+where
+    T: Clone,
+{
+    fn new(tokens: Vec<T>) -> Self {
+        Self { tokens, tp: 0 }
+    }
+    fn push(&mut self, item: T) {
+        self.tokens.push(item);
+    }
+    fn insert_from_slice(&mut self, slice: &[T]) {
+        for (i, item) in slice.iter().enumerate() {
+            self.tokens.insert(self.tp + i, item.clone());
+        }
+    }
+    pub fn next_if(&mut self, func: impl FnOnce(&T) -> bool) -> Option<T> {
+        match self.next() {
+            Some(matched) if func(&matched) => Some(matched),
+            other => None,
+        }
+    }
+
+    pub fn peek(&mut self) -> Option<&T> {
+        self.tokens.get(self.tp + 1)
+    }
+}
+
+impl<T> From<&[T]> for Streamer<T>
+where
+    T: Clone,
+{
+    fn from(items: &[T]) -> Self {
+        Self::new(items.to_vec())
+    }
+}
+
+impl<T> Iterator for Streamer<T>
+where
+    T: Clone,
+{
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        let tp = self.tp;
+        self.tp += 1;
+        self.tokens.get(tp).cloned()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pos {
     pub filename: String,
@@ -580,6 +634,13 @@ impl fmt::Display for Value {
     }
 }
 
+pub struct FasmCompiler {
+    out: std::fs::File,
+    data: Vec<(String, usize, String)>,
+    global: Hash<String, Value>,
+    errors: Vec<String>,
+}
+
 fn compile_to_fasm_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Result<Vec<String>> {
     let filename = format!("{}.asm", flags.name());
     let mut out = OpenOptions::new()
@@ -730,7 +791,7 @@ fn compile_to_fasm_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Re
 fn word<'a>(
     out: &mut std::fs::File,
     wordtok: &Token,
-    stream: &mut Stream<'a, Token>,
+    stream: &mut Streamer<Token>,
     global_dec: &mut HashMap<String, Value>,
     errors: &mut Vec<String>,
 ) -> std::io::Result<()> {
@@ -813,7 +874,7 @@ fn kind<'a>(
     data: &mut Vec<(String, usize, String)>,
     global_dec: &mut HashMap<String, Value>,
 ) -> std::io::Result<()> {
-    let mut stream = tokens.iter().peekable();
+    let mut stream = Streamer::from(tokens);
     while let Some(token) = stream.next() {
         if flags.debug {
             debug_title(out, &token, ";;")?;
@@ -848,7 +909,7 @@ fn kind<'a>(
 
 fn constant<'a>(
     const_token: &Token,
-    stream: &mut Stream<'a, Token>,
+    stream: &mut Streamer<Token>,
     global_dec: &mut HashMap<String, Value>,
     errors: &mut Vec<String>,
 ) {
@@ -1047,8 +1108,9 @@ fn constant<'a>(
 
 fn keyword<'a>(
     out: &mut std::fs::File,
+    flags: &Flags,
     token: &Token,
-    stream: &mut Stream<'a, Token>,
+    stream: &mut Streamer<Token>,
     variable: &mut HashMap<String, Value>,
     errors: &mut Vec<String>,
     kw: &KeyWord,
@@ -1063,13 +1125,16 @@ fn keyword<'a>(
                 ..
             }) = stream.next()
             {
-                let filename = snack_source_file(&format!("{}", name))
-                    .expect("Failed to Open imported Use File.");
-                let (token, errs) = scanner(&filename);
+                // Tokenizes file and adds tokens to stream.
+                // Adds Words to global Word list.
+                let filename = format!("{}.snack", name);
+                let (import_tokens, errs) = scanner(&filename);
                 if !errs.is_empty() {
                     errors.extend_from_slice(&errs);
                     return Ok(());
                 }
+                kind(out, flags, &import_tokens, errors, data, global_dec)?;
+                // stream.insert_from_slice(&import_tokens);
             } else {
                 errors.push(format!("{} Error: Use requires path", span,));
             }
