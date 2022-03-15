@@ -7,59 +7,59 @@ use std::{fmt, iter::Peekable};
 const MEMORY: u32 = 640_000;
 type Stream<'a, T> = Peekable<std::slice::Iter<'a, T>>;
 
-#[derive(Debug, Default)]
-struct Streamer<T> {
-    tokens: Vec<T>,
-    tp: usize,
-}
-
-impl<T> Streamer<T>
-where
-    T: Clone,
-{
-    fn new(tokens: Vec<T>) -> Self {
-        Self { tokens, tp: 0 }
-    }
-    fn push(&mut self, item: T) {
-        self.tokens.push(item);
-    }
-    fn insert_from_slice(&mut self, slice: &[T]) {
-        for (i, item) in slice.iter().enumerate() {
-            self.tokens.insert(self.tp + i, item.clone());
-        }
-    }
-    pub fn next_if(&mut self, func: impl FnOnce(&T) -> bool) -> Option<T> {
-        match self.next() {
-            Some(matched) if func(&matched) => Some(matched),
-            other => None,
-        }
-    }
-
-    pub fn peek(&mut self) -> Option<&T> {
-        self.tokens.get(self.tp + 1)
-    }
-}
-
-impl<T> From<&[T]> for Streamer<T>
-where
-    T: Clone,
-{
-    fn from(items: &[T]) -> Self {
-        Self::new(items.to_vec())
-    }
-}
-
-impl<T> Iterator for Streamer<T>
-where
-    T: Clone,
-{
-    type Item = T;
-    fn next(&mut self) -> Option<Self::Item> {
-        let tp = self.tp;
-        self.tp += 1;
-        self.tokens.get(tp).cloned()
-    }
-}
+// #[derive(Debug, Default)]
+// struct Streamer<T> {
+//     tokens: Vec<T>,
+//     tp: usize,
+// }
+//
+// impl<T> Streamer<T>
+// where
+//     T: Clone,
+// {
+//     fn new(tokens: Vec<T>) -> Self {
+//         Self { tokens, tp: 0 }
+//     }
+//     fn push(&mut self, item: T) {
+//         self.tokens.push(item);
+//     }
+//     fn insert_from_slice(&mut self, slice: &[T]) {
+//         for (i, item) in slice.iter().enumerate() {
+//             self.tokens.insert(self.tp + i, item.clone());
+//         }
+//     }
+//     pub fn next_if(&mut self, func: impl FnOnce(&T) -> bool) -> Option<T> {
+//         match self.next() {
+//             Some(matched) if func(&matched) => Some(matched),
+//             _ => None,
+//         }
+//     }
+//
+//     pub fn peek(&mut self) -> Option<&T> {
+//         self.tokens.get(self.tp + 1)
+//     }
+// }
+//
+// impl<T> From<&[T]> for Streamer<T>
+// where
+//     T: Clone,
+// {
+//     fn from(items: &[T]) -> Self {
+//         Self::new(items.to_vec())
+//     }
+// }
+//
+// impl<T> Iterator for Streamer<T>
+// where
+//     T: Clone,
+// {
+//     type Item = T;
+//     fn next(&mut self) -> Option<Self::Item> {
+//         let tp = self.tp;
+//         self.tp += 1;
+//         self.tokens.get(tp).cloned()
+//     }
+// }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pos {
@@ -614,12 +614,7 @@ pub fn pos_enum<'a>(filename: &str, src: &str) -> Vec<(char, Pos)> {
     spanned.clone()
 }
 
-fn debug_title(out: &mut std::fs::File, token: &Token, comment: &str) -> std::io::Result<()> {
-    out.write_all(format!("{}  === {} ===\n", comment, token).as_bytes())?;
-    Ok(())
-}
-
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 enum Value {
     Const(usize),
     Word(String, usize),
@@ -634,68 +629,7 @@ impl fmt::Display for Value {
     }
 }
 
-pub struct FasmCompiler {
-    out: std::fs::File,
-    data: Vec<(String, usize, String)>,
-    global: Hash<String, Value>,
-    errors: Vec<String>,
-}
-
-fn compile_to_fasm_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Result<Vec<String>> {
-    let filename = format!("{}.asm", flags.name());
-    let mut out = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(filename)?;
-
-    out.write_all(b"format ELF64 executable 3\n")?;
-    out.write_all(b"segment readable executable\n")?;
-    out.write_all(b"entry start\n")?;
-    out.write_all(b"print:\n")?;
-    out.write_all(b"    mov     r9, -3689348814741910323\n")?;
-    out.write_all(b"    sub     rsp, 40\n")?;
-    out.write_all(b"    mov     BYTE [rsp+31], 10\n")?;
-    out.write_all(b"    lea     rcx, [rsp+30]\n")?;
-    out.write_all(b".L2:\n")?;
-    out.write_all(b"    mov     rax, rdi\n")?;
-    out.write_all(b"    lea     r8, [rsp+32]\n")?;
-    out.write_all(b"    mul     r9\n")?;
-    out.write_all(b"    mov     rax, rdi\n")?;
-    out.write_all(b"    sub     r8, rcx\n")?;
-    out.write_all(b"    shr     rdx, 3\n")?;
-    out.write_all(b"    lea     rsi, [rdx+rdx*4]\n")?;
-    out.write_all(b"    add     rsi, rsi\n")?;
-    out.write_all(b"    sub     rax, rsi\n")?;
-    out.write_all(b"    add     eax, 48\n")?;
-    out.write_all(b"    mov     BYTE [rcx], al\n")?;
-    out.write_all(b"    mov     rax, rdi\n")?;
-    out.write_all(b"    mov     rdi, rdx\n")?;
-    out.write_all(b"    mov     rdx, rcx\n")?;
-    out.write_all(b"    sub     rcx, 1\n")?;
-    out.write_all(b"    cmp     rax, 9\n")?;
-    out.write_all(b"    ja      .L2\n")?;
-    out.write_all(b"    lea     rax, [rsp+32]\n")?;
-    out.write_all(b"    mov     edi, 1\n")?;
-    out.write_all(b"    sub     rdx, rax\n")?;
-    out.write_all(b"    xor     eax, eax\n")?;
-    out.write_all(b"    lea     rsi, [rsp+32+rdx]\n")?;
-    out.write_all(b"    mov     rdx, r8\n")?;
-    out.write_all(b"    mov     rax, 1\n")?;
-    out.write_all(b"    syscall\n")?;
-    out.write_all(b"    add     sp, 40\n")?;
-    out.write_all(b"    ret\n")?;
-
-    // Memory to be allocated.
-    let mut data: Vec<(String, usize, String)> = Vec::new();
-    // A list of all computational errors
-    let mut errors: Vec<String> = Vec::new();
-    // Find all Word's/Functions/Procedures in tokens and remove the definitions
-    // Place in Assembly file all function definitions above main
-    // Put them into words hash and
-
-    // Find all Word Tokens
-    // FIXME: JUST CLEAN THIS UP.................
+fn build_global(tokens: &mut Vec<Token>, words: &mut HashMap<String, Vec<Token>>) -> bool {
     let wordloc: Vec<usize> = tokens
         .iter()
         .enumerate()
@@ -709,7 +643,6 @@ fn compile_to_fasm_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Re
         .filter(|(_, tok)| tok.kind == Kind::KeyWord(KeyWord::End) && tok.ret)
         .map(|(end, _)| end)
         .collect();
-    let mut words: HashMap<String, Vec<Token>> = HashMap::new();
 
     // Taking all Functions out of tokens.
     for (start, end) in wordloc.iter().zip(endloc).rev() {
@@ -726,713 +659,789 @@ fn compile_to_fasm_x86_64(flags: &Flags, tokens: &mut Vec<Token>) -> std::io::Re
         words.insert(wordname, wordtok);
     }
     if !words.contains_key("main") {
-        errors.push("NoMainError: Main entry point must be declared.".into());
+        return true;
     }
-    // let stream = tokens.iter().peekable();
-
-    // Write all Word declaration above main label.
-
-    let mut global_dec: HashMap<String, Value> = HashMap::new();
-    kind(
-        &mut out,
-        flags,
-        tokens,
-        &mut errors,
-        &mut data,
-        &mut global_dec,
-    )?;
-    for (name, tokens) in words.iter() {
-        if name != &"main".to_string() {
-            // let stream = tokens.iter().peekable();
-            // Look up table for all Const values.
-            kind(
-                &mut out,
-                &flags,
-                tokens,
-                &mut errors,
-                &mut data,
-                &mut global_dec,
-            )?;
-        }
-    }
-    out.write_all(b"start:\n")?;
-    if let Some(main) = words.get("main") {
-        // Remove data to be local allocated
-        let body = &main[3..main.len() - 1];
-        kind(
-            &mut out,
-            &flags,
-            body,
-            &mut errors,
-            &mut data,
-            &mut global_dec,
-        )?;
-    }
-    out.write_all(b"    mov     eax,1\n")?;
-    out.write_all(b"    xor     ebx,ebx\n")?;
-    out.write_all(b"    int     0x80\n")?;
-    out.write_all(b"segment readable writeable\n")?;
-    reserve_data(&mut out, &mut data)?;
-    out.write_all(format!("mem: rb {}\n", MEMORY).as_bytes())?;
-    Ok(errors)
+    false
 }
 
-// fn arguments<'a>(stream: &mut Stream<'a, Token>, errors: &mut Vec<String>) -> Vec<String> {
-//     let mut a = Vec::new();
-//     while let Some(token) = stream.next_if(|tok| matches!(tok.kind, Kind::Id(_))) {
-//         let name = match &token.kind {
-//             Kind::Id(name) => a.push(name.to_string()),
-//             _ => unreachable!(),
-//         };
-//     }
-//     a
-// }
-
-fn word<'a>(
-    out: &mut std::fs::File,
-    wordtok: &Token,
-    stream: &mut Streamer<Token>,
-    global_dec: &mut HashMap<String, Value>,
-    errors: &mut Vec<String>,
-) -> std::io::Result<()> {
-    if let Some(tokenid) = stream.next() {
-        match &tokenid.kind {
-            Kind::Id(name) => {
-                let mut arg_count = 0;
-                if !global_dec.contains_key(name) {
-                    out.write_all(format!("{}:\n", name).as_bytes())?;
-                // arguments(stream, errors)
-                } else {
-                    errors.push(format!(
-                        "{} NameAlreadyDefinedError: {} is already defind.",
-                        tokenid.span, tokenid.kind
-                    ));
-                }
-                while let Some(_name) = stream.next_if(|tok| tok.kind != Kind::KeyWord(KeyWord::In))
-                {
-                    arg_count += 1;
-                }
-                global_dec.insert(name.clone(), Value::Word(name.clone(), arg_count));
-                prologue(out)?;
-                arg_gen(out, arg_count)?;
-            }
-            _ => errors.push(format!(
-                "{} NoWordIdError: found {} ",
-                tokenid.span, tokenid.kind
-            )),
-        }
-    } else {
-        errors.push(format!(
-            "{} NoWordIdError: Name and Body of Word not defined.",
-            wordtok.span
-        ));
-    }
-    Ok(())
+pub struct FasmCompiler {
+    out: std::fs::File,
+    tokens: Vec<Token>,
+    words: HashMap<String, Vec<Token>>,
+    data: Vec<(String, usize, String)>,
+    global: HashMap<String, Value>,
+    errors: Vec<String>,
+    flags: Flags,
 }
 
-fn prologue(out: &mut std::fs::File) -> std::io::Result<()> {
-    out.write_all(b"    push     rbp\n")?;
-    out.write_all(b"    mov      rbp, rsp\n")?;
-    Ok(())
-}
-
-fn arg_gen(out: &mut std::fs::File, counter: usize) -> std::io::Result<()> {
-    assert!(counter <= 2);
-    let args: [&str; 2] = ["edi", "esi"];
-    let ret: [&str; 2] = ["ax", "bx"];
-    for idx in 0..counter {
-        out.write_all(
-            format!("    mov      dword [rbp-{}],{}\n", (idx * 4) + 4, args[idx]).as_bytes(),
-        )?;
-        out.write_all(
-            format!("    mov      e{},dword [rbp-{}]\n", ret[idx], (idx * 4) + 4).as_bytes(),
-        )?;
+impl<'a> FasmCompiler {
+    const ENTRY_POINT: &'a str = "start";
+    pub fn new(flags: Flags, tokens: Vec<Token>) -> std::io::Result<Self> {
+        let filename = format!("{}.asm", flags.name());
+        let out = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(filename)?;
+        // let stream = Streamer::new(tokens);
+        let global = HashMap::new();
+        let errors = Vec::new();
+        let words = HashMap::new();
+        let data = Vec::new();
+        Ok(Self {
+            out,
+            tokens,
+            // stream,
+            words,
+            data,
+            global,
+            errors,
+            flags,
+        })
     }
-    for idx in 0..counter {
-        out.write_all(format!("    push      r{}\n", ret[idx]).as_bytes())?;
+    fn fasm_header(&mut self, entry_point: &str) -> std::io::Result<()> {
+        self.out.write_all(b"format ELF64 executable 3\n")?;
+        self.out.write_all(b"segment readable executable\n")?;
+        self.out
+            .write_all(format!("entry {}\n", entry_point).as_bytes())?;
+        Ok(())
     }
-    Ok(())
-}
-
-fn call(out: &mut std::fs::File, name: &str, count: usize) -> std::io::Result<()> {
-    if count > 2 {
-        panic!("We don't know how to handle more arguments");
+    fn fasm_print(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"print:\n")?;
+        self.out
+            .write_all(b"    mov     r9, -3689348814741910323\n")?;
+        self.out.write_all(b"    sub     rsp, 40\n")?;
+        self.out.write_all(b"    mov     BYTE [rsp+31], 10\n")?;
+        self.out.write_all(b"    lea     rcx, [rsp+30]\n")?;
+        self.out.write_all(b".L2:\n")?;
+        self.out.write_all(b"    mov     rax, rdi\n")?;
+        self.out.write_all(b"    lea     r8, [rsp+32]\n")?;
+        self.out.write_all(b"    mul     r9\n")?;
+        self.out.write_all(b"    mov     rax, rdi\n")?;
+        self.out.write_all(b"    sub     r8, rcx\n")?;
+        self.out.write_all(b"    shr     rdx, 3\n")?;
+        self.out.write_all(b"    lea     rsi, [rdx+rdx*4]\n")?;
+        self.out.write_all(b"    add     rsi, rsi\n")?;
+        self.out.write_all(b"    sub     rax, rsi\n")?;
+        self.out.write_all(b"    add     eax, 48\n")?;
+        self.out.write_all(b"    mov     BYTE [rcx], al\n")?;
+        self.out.write_all(b"    mov     rax, rdi\n")?;
+        self.out.write_all(b"    mov     rdi, rdx\n")?;
+        self.out.write_all(b"    mov     rdx, rcx\n")?;
+        self.out.write_all(b"    sub     rcx, 1\n")?;
+        self.out.write_all(b"    cmp     rax, 9\n")?;
+        self.out.write_all(b"    ja      .L2\n")?;
+        self.out.write_all(b"    lea     rax, [rsp+32]\n")?;
+        self.out.write_all(b"    mov     edi, 1\n")?;
+        self.out.write_all(b"    sub     rdx, rax\n")?;
+        self.out.write_all(b"    xor     eax, eax\n")?;
+        self.out.write_all(b"    lea     rsi, [rsp+32+rdx]\n")?;
+        self.out.write_all(b"    mov     rdx, r8\n")?;
+        self.out.write_all(b"    mov     rax, 1\n")?;
+        self.out.write_all(b"    syscall\n")?;
+        self.out.write_all(b"    add     sp, 40\n")?;
+        self.out.write_all(b"    ret\n")?;
+        Ok(())
     }
-    let args: [&str; 2] = ["rdi", "rsi"];
-    for reg in args[0..count].iter().rev() {
-        out.write_all(format!("    pop     {}\n", reg).as_bytes())?;
+    fn fasm_exit(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    mov     eax,1\n")?;
+        self.out.write_all(b"    xor     ebx,ebx\n")?;
+        self.out.write_all(b"    int     0x80\n")?;
+        Ok(())
     }
-    out.write_all(format!("    call     {}\n", name).as_bytes())?;
-    Ok(())
-}
-
-fn kind<'a>(
-    out: &mut std::fs::File,
-    flags: &Flags,
-    tokens: &[Token],
-    errors: &mut Vec<String>,
-    data: &mut Vec<(String, usize, String)>,
-    global_dec: &mut HashMap<String, Value>,
-) -> std::io::Result<()> {
-    let mut stream = Streamer::from(tokens);
-    while let Some(token) = stream.next() {
-        if flags.debug {
-            debug_title(out, &token, ";;")?;
-        }
-        match &token.kind {
-            // Turn this into a Value to put on the sack.
-            Kind::Id(id) => match global_dec.get(id) {
-                Some(v) => match v {
-                    Value::Const(i) => out.write_all(format!("    push     {}\n", i).as_bytes())?,
-                    Value::Word(name, count) => call(out, name, *count)?,
-                },
-                _ => errors.push(format!("{} Error: UnKnown variable `{}`.", token.span, id)),
-            },
-            Kind::KeyWord(KeyWord::Const) => constant(&token, &mut stream, global_dec, errors),
-            Kind::KeyWord(kw) => keyword(
-                out,
-                &token,
-                &mut stream,
-                global_dec,
-                errors,
-                kw,
-                token.span.clone(),
-                token.jump,
-                token.end,
-            )?,
-            Kind::Prim(prim) => primitives(out, prim, token.span.clone(), data)?,
-            Kind::Oper(op) => operators(out, op, token.span.clone())?,
-        }
-    }
-    Ok(())
-}
-
-fn constant<'a>(
-    const_token: &Token,
-    stream: &mut Streamer<Token>,
-    global_dec: &mut HashMap<String, Value>,
-    errors: &mut Vec<String>,
-) {
-    if let Some(token1) = stream.next() {
-        match &token1.kind {
-            Kind::Id(id1) => {
-                let mut stack: Vec<usize> = Vec::new();
-                while let Some(token2) = stream.next_if(|t| t.kind != Kind::KeyWord(KeyWord::End)) {
-                    match &token2.kind {
-                        Kind::Id(id2) => {
-                            if let Some(&Value::Const(num)) = global_dec.get(id2) {
-                                stack.push(num);
-                            } else {
-                                errors.push(format!(
-                                    "{} Error: {} is not defined.",
-                                    token2.span, id2
-                                ));
-                            }
-                        }
-                        Kind::KeyWord(KeyWord::Const) => {
-                            errors
-                                .push(
-                                    format!("{} Error: `const` Keyword is not allowed in another `const` definition", token2.span)
-                                );
-                            break;
-                        }
-                        Kind::KeyWord(_) => {}
-                        Kind::Prim(prim) => match prim {
-                            Prim::Int(i) => stack.push(i.parse().unwrap()),
-                            _ => errors.push(format!(
-                                "{} Error: Unsupported const Type <String>",
-                                token2.span,
-                            )),
-                        },
-                        Kind::Oper(op) => match op {
-                            Oper::Store => {
-                                errors.push(format!(
-                                        "{} Error: Unsupported {} operation in side a 'const declaration'.",
-                                        token2.span, token2.kind
-                                ));
-                                break;
-                            }
-                            Oper::Load => {
-                                errors.push(format!(
-                                        "{} Error: Unsupported {} operation in side a 'const declaration'.",
-                                        token2.span, token2.kind
-                                ));
-                                break;
-                            }
-                            Oper::Plus => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push(l + r);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Minus => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push(l - r);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Mul => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push(l * r);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Div => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push(l / r);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Mod => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push(l % r);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Grt => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push((l > r) as usize);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Geq => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push((l >= r) as usize);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Les => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push((l < r) as usize);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Leq => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push((l < r) as usize);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Neq => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push((l != r) as usize);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                            Oper::Eq => {
-                                if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
-                                    stack.push((l == r) as usize);
-                                } else {
-                                    errors.push(format!(
-                                        "{} Error: Not enough items on stack to {} to.",
-                                        token2.span, token2.kind
-                                    ));
-                                    break;
-                                }
-                            }
-                        },
-                    }
-                }
-                if stack.is_empty() {
-                    errors.push(format!(
-                        "{} Error: Nothing to assine to '{}' const variable.",
-                        token1.span, id1
-                    ));
-                } else if stack.len() > 1 {
-                    errors.push(format!(
-                        "{} Error: To Many values to assine to '{}' const variable left on stack.",
-                        token1.span, id1
-                    ));
-                } else {
-                    global_dec.insert(id1.to_string(), Value::Const(stack.pop().unwrap()));
-                }
-                let _ = stream.next();
-            }
-            _ => errors.push(format!(
-                "{} Error: No const variable name was give.",
-                const_token.span
-            )),
-        }
-    }
-}
-
-fn keyword<'a>(
-    out: &mut std::fs::File,
-    flags: &Flags,
-    token: &Token,
-    stream: &mut Streamer<Token>,
-    variable: &mut HashMap<String, Value>,
-    errors: &mut Vec<String>,
-    kw: &KeyWord,
-    span: Span,
-    jump: Option<usize>,
-    end: Option<usize>,
-) -> std::io::Result<()> {
-    match kw {
-        KeyWord::Use => {
-            if let Some(Token {
-                kind: Kind::Id(name),
-                ..
-            }) = stream.next()
-            {
-                // Tokenizes file and adds tokens to stream.
-                // Adds Words to global Word list.
-                let filename = format!("{}.snack", name);
-                let (import_tokens, errs) = scanner(&filename);
-                if !errs.is_empty() {
-                    errors.extend_from_slice(&errs);
-                    return Ok(());
-                }
-                kind(out, flags, &import_tokens, errors, data, global_dec)?;
-                // stream.insert_from_slice(&import_tokens);
-            } else {
-                errors.push(format!("{} Error: Use requires path", span,));
-            }
-        }
-        KeyWord::Word => {
-            word(out, token, stream, variable, errors)?;
-        }
-        KeyWord::In => {}
-        KeyWord::While => {
-            out.write_all(span.start.addr().as_bytes())?;
-        }
-        KeyWord::Do => {
-            out.write_all(b"    pop      rbx\n")?;
-            out.write_all(b"    test     rbx,rbx\n")?;
-            if let Some(e) = end {
-                out.write_all(format!("    jz      {}{}\n", span.start.jump(), e).as_bytes())?;
-            } else {
-                errors.push(format!(
-                    "{} Error: Do block missing `end` closing block. This could be a compiler bug.",
-                    span,
-                ));
-            }
-        }
-        KeyWord::If => {
-            out.write_all(b"    pop      rbx\n")?;
-            out.write_all(b"    test     rbx,rbx\n")?;
-            if let Some(j) = jump {
-                out.write_all(format!("    jz     {}{}\n", span.start.jump(), j).as_bytes())?;
-            }
-        }
-        KeyWord::ElIf => {
-            out.write_all(span.start.addr().as_bytes())?;
-            out.write_all(b"    pop     rbx\n")?;
-            out.write_all(b"    test    rbx,rbx\n")?;
-            if let Some(j) = jump {
-                out.write_all(format!("    jz       {}{}\n", span.start.jump(), j).as_bytes())?;
-            } else if let Some(e) = end {
-                out.write_all(format!("    jz       {}{}\n", span.start.jump(), e).as_bytes())?;
-            } else {
-                errors.push(format!(
-                    "{} Error: elif statement missing `end` closing block.",
-                    span,
-                ));
-            }
-        }
-        KeyWord::Else => {
-            if let Some(e) = end {
-                out.write_all(format!("    jmp      {}{}\n", span.start.jump(), e).as_bytes())?;
-            } else {
-                errors.push(format!(
-                    "{} Error: Else statement missing `end` closing block.",
-                    span,
-                ));
-            }
-            out.write_all(span.start.addr().as_bytes())?;
-        }
-        KeyWord::End => {
-            if let (Some(j), false) = (jump, token.ret) {
-                out.write_all(format!("    jmp      {}{}\n", span.start.jump(), j).as_bytes())?;
-            } else if let Some(_e) = end {
-                out.write_all(span.start.addr().as_bytes())?;
-            }
-            out.write_all(span.start.addr().as_bytes())?;
-            if token.ret {
-                out.write_all(b"    pop      rbp\n")?;
-                out.write_all(b"    ret\n")?;
-            }
-        }
-        KeyWord::Dot => {
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    call     print\n")?;
-        }
-        KeyWord::Copy => {
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    push     rdi\n")?;
-            out.write_all(b"    push     rdi\n")?;
-        }
-        KeyWord::Over => {
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rdx\n")?;
-            out.write_all(b"    push     rdx\n")?;
-            out.write_all(b"    push     rdi\n")?;
-            out.write_all(b"    push     rdx\n")?;
-        }
-        KeyWord::Rot => {
-            out.write_all(b"    pop      rdi\n")?; // 1
-            out.write_all(b"    pop      rdx\n")?; // 2
-            out.write_all(b"    pop      rsi\n")?; // 3
-            out.write_all(b"    push     rdi\n")?; // 1
-            out.write_all(b"    push     rsi\n")?; // 3
-            out.write_all(b"    push     rdx\n")?; // 2
-        }
-        KeyWord::Swap => {
-            out.write_all(b"    pop      rdi\n")?; // 1
-            out.write_all(b"    pop      rdx\n")?; // 2
-            out.write_all(b"    push     rdi\n")?; // 2
-            out.write_all(b"    push     rdx\n")?; // 1
-        }
-        KeyWord::Drop => {
-            out.write_all(b"    pop      rdx\n")?;
-        }
-        KeyWord::Max => {
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rsi\n")?;
-            out.write_all(b"    cmp      rdi,rsi\n")?;
-            out.write_all(b"    mov      rax,rsi\n")?;
-            out.write_all(b"    cmovge   rax,rdi\n")?;
-            out.write_all(b"    push     rax\n")?;
-        }
-        KeyWord::Memory => {
-            out.write_all(b"    push     mem\n")?;
-        }
-        KeyWord::SysCall1 => errors.push(format!(
-            "{} ERROR: {} is not yet implemented yet.",
-            span, kw
-        )),
-        KeyWord::SysCall2 => errors.push(format!(
-            "{} ERROR: {} is not yet implemented yet.",
-            span, kw
-        )),
-        KeyWord::SysCall3 => {
-            out.write_all(b"    pop      rax\n")?;
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rsi\n")?;
-            out.write_all(b"    pop      rdx\n")?;
-            out.write_all(b"    syscall\n")?;
-        }
-        KeyWord::SysCall4 => errors.push(format!(
-            "{} ERROR: {} is not yet implemented yet.",
-            span, kw
-        )),
-        KeyWord::SysCall5 => errors.push(format!(
-            "{} ERROR: {} is not yet implemented yet.",
-            span, kw
-        )),
-        KeyWord::SysCall6 => errors.push(format!(
-            "{} ERROR: {} is not yet implemented yet.",
-            span, kw
-        )),
-        _ => unreachable!(),
-    }
-    Ok(())
-}
-
-fn primitives(
-    out: &mut std::fs::File,
-    prim: &Prim,
-    span: Span,
-    data: &mut Vec<(String, usize, String)>,
-) -> std::io::Result<()> {
-    match prim {
-        Prim::Int(v) | Prim::Hex(v) => {
-            out.write_all(format!("    push     {}\n", v).as_bytes())?;
-        }
-        Prim::String(string) => {
-            data.push((
-                remove_file_extension(&span.start.filename),
-                span.start.idx,
-                string.to_string(),
-            ));
-            out.write_all(format!("    push     {}\n", string.len()).as_bytes())?;
-            out.write_all(
+    fn fasm_memory(&mut self) -> std::io::Result<()> {
+        // Filename + Idx of String in file
+        for (filename, idx, d) in self.data.iter() {
+            self.out.write_all(
                 format!(
-                    "    push     data{}{}\n",
-                    remove_file_extension(&span.start.filename)
-                        .replace("-", "")
-                        .replace("/", ""),
-                    span.start.idx
+                    "data{}{} db ",
+                    filename.replace("-", "").replace("/", ""),
+                    idx
                 )
                 .as_bytes(),
             )?;
+            for (i, byte) in d.as_bytes().iter().enumerate() {
+                if i != 0 {
+                    self.out.write_all(format!(" ,{}", byte).as_bytes())?;
+                } else {
+                    self.out.write_all(format!("{}", byte).as_bytes())?;
+                }
+            }
+            self.out.write_all(b"\n")?;
         }
+        Ok(())
     }
-    Ok(())
+    fn fasm_footer(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"segment readable writeable\n")?;
+        self.fasm_memory()?;
+        self.out
+            .write_all(format!("mem: rb {}\n", MEMORY).as_bytes())?;
+        Ok(())
+    }
+
+    fn fasm_debug_title(&mut self, token: &Token, comment: &str) -> std::io::Result<()> {
+        self.out
+            .write_all(format!("{}  === {} ===\n", comment, token).as_bytes())?;
+        Ok(())
+    }
+
+    fn fasm_prologue(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    push     rbp\n")?;
+        self.out.write_all(b"    mov      rbp, rsp\n")?;
+        Ok(())
+    }
+    fn create_pass_fasm_arguments(&mut self, counter: usize) -> std::io::Result<()> {
+        assert!(counter <= 2);
+        let args: [&str; 2] = ["edi", "esi"];
+        let ret: [&str; 2] = ["ax", "bx"];
+        for idx in 0..counter {
+            self.out.write_all(
+                format!("    mov      dword [rbp-{}],{}\n", (idx * 4) + 4, args[idx]).as_bytes(),
+            )?;
+            self.out.write_all(
+                format!("    mov      e{},dword [rbp-{}]\n", ret[idx], (idx * 4) + 4).as_bytes(),
+            )?;
+        }
+        for idx in 0..counter {
+            self.out
+                .write_all(format!("    push      r{}\n", ret[idx]).as_bytes())?;
+        }
+        Ok(())
+    }
+    fn label(&mut self, name: &str) -> std::io::Result<()> {
+        self.out.write_all(format!("{}:\n", name).as_bytes())?;
+        Ok(())
+    }
 }
 
-fn operators(out: &mut std::fs::File, op: &Oper, _span: Span) -> std::io::Result<()> {
-    match op {
-        Oper::Store => {
-            out.write_all(b"    pop     rbx\n")?;
-            out.write_all(b"    pop     rax\n")?;
-            out.write_all(b"    mov     [rax],bl\n")?;
+impl FasmCompiler {
+    fn compiler(&mut self) -> std::io::Result<Vec<String>> {
+        if build_global(&mut self.tokens, &mut self.words) {
+            self.errors
+                .push("NoMainError: Main entry point must be declared.".into());
         }
-        Oper::Load => {
-            out.write_all(b"    pop     rax\n")?;
-            out.write_all(b"    xor     rbx,rbx\n")?;
-            out.write_all(b"    mov     bl,[rax]\n")?;
-        }
-        Oper::Plus => {
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rdx\n")?;
-            out.write_all(b"    add      rdx,rdi\n")?;
-            out.write_all(b"    push     rdx\n")?;
-        }
-        Oper::Minus => {
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rdx\n")?;
-            out.write_all(b"    sub      rdx,rdi\n")?;
-            out.write_all(b"    push     rdx\n")?;
-        }
-        Oper::Mul => {
-            out.write_all(b"    pop     rax\n")?;
-            out.write_all(b"    pop     rbx\n")?;
-            out.write_all(b"    mul     rbx\n")?;
-            out.write_all(b"    push    rax\n")?;
-        }
-        Oper::Div => {
-            out.write_all(b"    pop      rbx\n")?;
-            out.write_all(b"    pop      rax\n")?;
-            out.write_all(b"    div      rbx\n")?;
-            out.write_all(b"    push     rax\n")?;
-        }
-        Oper::Mod => {
-            out.write_all(b"    xor      rdx, rdx\n")?;
-            out.write_all(b"    pop      rbx\n")?;
-            out.write_all(b"    pop      rax\n")?;
-            out.write_all(b"    div      rbx\n")?;
-            out.write_all(b"    push     rdx\n")?;
-        }
-        Oper::Grt => {
-            out.write_all(b"    mov      rbx,0\n")?;
-            out.write_all(b"    mov      rdx,1\n")?;
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rsi\n")?;
-            out.write_all(b"    cmp      rsi,rdi\n")?;
-            out.write_all(b"    cmovg    rbx,rdx\n")?;
-            out.write_all(b"    push     rbx\n")?;
-        }
-        Oper::Geq => {
-            out.write_all(b"    mov      rbx,0\n")?;
-            out.write_all(b"    mov      rdx,1\n")?;
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rsi\n")?;
-            out.write_all(b"    cmp      rsi,rdi\n")?;
-            out.write_all(b"    cmovge   rbx,rdx\n")?;
-            out.write_all(b"    push     rbx\n")?;
-        }
-        Oper::Les => {
-            out.write_all(b"    mov      rbx,0\n")?;
-            out.write_all(b"    mov      rdx,1\n")?;
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rsi\n")?;
-            out.write_all(b"    cmp      rsi,rdi\n")?;
-            out.write_all(b"    cmovl    rbx,rdx\n")?;
-            out.write_all(b"    push     rbx\n")?;
-        }
-        Oper::Leq => {
-            out.write_all(b"    mov      rbx,0\n")?;
-            out.write_all(b"    mov      rdx,1\n")?;
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rsi\n")?;
-            out.write_all(b"    cmp      rsi,rdi\n")?;
-            out.write_all(b"    cmovle   rbx,rdx\n")?;
-            out.write_all(b"    push     rbx\n")?;
-        }
-        Oper::Neq => {
-            out.write_all(b"    mov      rbx,0\n")?;
-            out.write_all(b"    mov      rdx,1\n")?;
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rsi\n")?;
-            out.write_all(b"    cmp      rsi,rdi\n")?;
-            out.write_all(b"    cmovne   rbx,rdx\n")?;
-            out.write_all(b"    push     rbx\n")?;
-        }
-        Oper::Eq => {
-            out.write_all(b"    mov      rbx,0\n")?;
-            out.write_all(b"    mov      rdx,1\n")?;
-            out.write_all(b"    pop      rdi\n")?;
-            out.write_all(b"    pop      rsi\n")?;
-            out.write_all(b"    cmp      rsi,rdi\n")?;
-            out.write_all(b"    cmove    rbx,rdx\n")?;
-            out.write_all(b"    push     rbx\n")?;
-        }
-    }
-    Ok(())
-}
-//                                                Filename, idx, Data
-fn reserve_data(out: &mut std::fs::File, data: &[(String, usize, String)]) -> std::io::Result<()> {
-    // Filename + Idx of String in file
-    for (filename, idx, d) in data.iter() {
-        out.write_all(
-            format!(
-                "data{}{} db ",
-                filename.replace("-", "").replace("/", ""),
-                idx
-            )
-            .as_bytes(),
-        )?;
-        for (i, byte) in d.as_bytes().iter().enumerate() {
-            if i != 0 {
-                out.write_all(format!(" ,{}", byte).as_bytes())?;
-            } else {
-                out.write_all(format!("{}", byte).as_bytes())?;
+
+        self.fasm_header(FasmCompiler::ENTRY_POINT)?;
+        self.fasm_print()?;
+
+        self.kind(&self.tokens.clone())?;
+
+        let words = self.words.clone();
+        for (name, tokens) in words.iter() {
+            if name != "main" {
+                self.kind(tokens)?;
             }
         }
-        out.write_all(b"\n")?;
+
+        self.label(FasmCompiler::ENTRY_POINT)?;
+
+        let main_word = self.words.get("main").cloned();
+        if let Some(main) = main_word {
+            let body = &main[3..main.len() - 1];
+            self.kind(body)?;
+        }
+
+        self.fasm_exit()?;
+        self.fasm_footer()?;
+        Ok(self.errors.clone())
     }
-    Ok(())
+
+    fn kind(&mut self, tokens: &[Token]) -> std::io::Result<()> {
+        let mut stream = tokens.iter().peekable();
+        while let Some(token) = stream.next() {
+            if self.flags.debug {
+                self.fasm_debug_title(&token, ";;")?;
+            }
+            match &token.kind {
+                Kind::Id(id) => self.id(id, &token)?,
+                Kind::KeyWord(KeyWord::Const) => self.constant(&mut stream, &token)?,
+                Kind::KeyWord(kw) => self.keyword(&mut stream, kw, &token)?,
+                Kind::Prim(prim) => self.primitives(&mut stream, prim, &token)?,
+                Kind::Oper(op) => self.operators(&mut stream, op)?,
+            }
+        }
+        Ok(())
+    }
+
+    fn word(&mut self, stream: &mut Stream<Token>, wordtok: &Token) -> std::io::Result<()> {
+        if let Some(tokenid) = stream.next() {
+            match &tokenid.kind {
+                Kind::Id(name) => {
+                    let mut arg_count = 0;
+                    if !self.global.contains_key(name) {
+                        self.out.write_all(format!("{}:\n", name).as_bytes())?;
+                    } else {
+                        self.errors.push(format!(
+                            "{} NameAlreadyDefinedError: {} is already defind.",
+                            tokenid.span, tokenid.kind
+                        ));
+                    }
+                    while let Some(_name) =
+                        stream.next_if(|tok| tok.kind != Kind::KeyWord(KeyWord::In))
+                    {
+                        arg_count += 1;
+                    }
+                    self.global
+                        .insert(name.clone(), Value::Word(name.clone(), arg_count));
+                    self.fasm_prologue()?;
+                    self.create_pass_fasm_arguments(arg_count)?;
+                }
+                _ => self.errors.push(format!(
+                    "{} NoWordIdError: found {} ",
+                    tokenid.span, tokenid.kind
+                )),
+            }
+        } else {
+            self.errors.push(format!(
+                "{} NoWordIdError: Name and Body of Word not defined.",
+                wordtok.span
+            ));
+        }
+        Ok(())
+    }
+
+    fn id(&mut self, id: &str, token: &Token) -> std::io::Result<()> {
+        let value = self.global.get(id).cloned();
+        match value {
+            Some(v) => match v {
+                Value::Const(i) => self
+                    .out
+                    .write_all(format!("    push     {}\n", i).as_bytes())?,
+                Value::Word(name, count) => self.call(&name, count)?,
+            },
+            _ => self
+                .errors
+                .push(format!("{} Error: UnKnown variable `{}`.", token.span, id)),
+        }
+        Ok(())
+    }
+
+    fn call(&mut self, name: &str, count: usize) -> std::io::Result<()> {
+        if count > 2 {
+            panic!("We don't know how to handle more arguments");
+        }
+        let args: [&str; 2] = ["rdi", "rsi"];
+        for reg in args[0..count].iter().rev() {
+            self.out
+                .write_all(format!("    pop     {}\n", reg).as_bytes())?;
+        }
+        self.out
+            .write_all(format!("    call     {}\n", name).as_bytes())?;
+        Ok(())
+    }
+
+    fn keyword(
+        &mut self,
+        stream: &mut Stream<Token>,
+        kw: &KeyWord,
+        token: &Token,
+    ) -> std::io::Result<()> {
+        match kw {
+            KeyWord::Use => {
+                if let Some(Token {
+                    kind: Kind::Id(name),
+                    ..
+                }) = stream.next()
+                {
+                    // Tokenizes file and adds tokens to stream.
+                    // Adds Words to global Word list.
+                    let filename = format!("{}.snack", name);
+                    let (_import_tokens, errs) = scanner(&filename);
+                    if !errs.is_empty() {
+                        self.errors.extend_from_slice(&errs);
+                        return Ok(());
+                    }
+                    // kind(out, flags, &import_tokens, errors, data, global_dec)?;
+                    // stream.insert_from_slice(&import_tokens);
+                } else {
+                    self.errors
+                        .push(format!("{} Error: Use requires path", token.span,));
+                }
+            }
+            KeyWord::Word => {
+                self.word(stream, token)?;
+            }
+            KeyWord::In => {}
+            KeyWord::While => {
+                self.out.write_all(token.span.start.addr().as_bytes())?;
+            }
+            KeyWord::Do => {
+                self.out.write_all(b"    pop      rbx\n")?;
+                self.out.write_all(b"    test     rbx,rbx\n")?;
+                if let Some(e) = token.end {
+                    self.out.write_all(
+                        format!("    jz      {}{}\n", token.span.start.jump(), e).as_bytes(),
+                    )?;
+                } else {
+                    self.errors.push(format!(
+                            "{} Error: Do block missing `end` closing block. This could be a compiler bug.",
+                            token.span,
+                    ));
+                }
+            }
+            KeyWord::If => {
+                self.out.write_all(b"    pop      rbx\n")?;
+                self.out.write_all(b"    test     rbx,rbx\n")?;
+                if let Some(j) = token.jump {
+                    self.out.write_all(
+                        format!("    jz     {}{}\n", token.span.start.jump(), j).as_bytes(),
+                    )?;
+                }
+            }
+            KeyWord::ElIf => {
+                self.out.write_all(token.span.start.addr().as_bytes())?;
+                self.out.write_all(b"    pop     rbx\n")?;
+                self.out.write_all(b"    test    rbx,rbx\n")?;
+                if let Some(j) = token.jump {
+                    self.out.write_all(
+                        format!("    jz       {}{}\n", token.span.start.jump(), j).as_bytes(),
+                    )?;
+                } else if let Some(e) = token.end {
+                    self.out.write_all(
+                        format!("    jz       {}{}\n", token.span.start.jump(), e).as_bytes(),
+                    )?;
+                } else {
+                    self.errors.push(format!(
+                        "{} Error: elif statement missing `end` closing block.",
+                        token.span,
+                    ));
+                }
+            }
+            KeyWord::Else => {
+                if let Some(e) = token.end {
+                    self.out.write_all(
+                        format!("    jmp      {}{}\n", token.span.start.jump(), e).as_bytes(),
+                    )?;
+                } else {
+                    self.errors.push(format!(
+                        "{} Error: Else statement missing `end` closing block.",
+                        token.span,
+                    ));
+                }
+                self.out.write_all(token.span.start.addr().as_bytes())?;
+            }
+            KeyWord::End => {
+                if let (Some(j), false) = (token.jump, token.ret) {
+                    self.out.write_all(
+                        format!("    jmp      {}{}\n", token.span.start.jump(), j).as_bytes(),
+                    )?;
+                } else if let Some(_e) = token.end {
+                    self.out.write_all(token.span.start.addr().as_bytes())?;
+                }
+                self.out.write_all(token.span.start.addr().as_bytes())?;
+                if token.ret {
+                    self.out.write_all(b"    pop      rbp\n")?;
+                    self.out.write_all(b"    ret\n")?;
+                }
+            }
+            KeyWord::Dot => {
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    call     print\n")?;
+            }
+            KeyWord::Copy => {
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    push     rdi\n")?;
+                self.out.write_all(b"    push     rdi\n")?;
+            }
+            KeyWord::Over => {
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rdx\n")?;
+                self.out.write_all(b"    push     rdx\n")?;
+                self.out.write_all(b"    push     rdi\n")?;
+                self.out.write_all(b"    push     rdx\n")?;
+            }
+            KeyWord::Rot => {
+                self.out.write_all(b"    pop      rdi\n")?; // 1
+                self.out.write_all(b"    pop      rdx\n")?; // 2
+                self.out.write_all(b"    pop      rsi\n")?; // 3
+                self.out.write_all(b"    push     rdi\n")?; // 1
+                self.out.write_all(b"    push     rsi\n")?; // 3
+                self.out.write_all(b"    push     rdx\n")?; // 2
+            }
+            KeyWord::Swap => {
+                self.out.write_all(b"    pop      rdi\n")?; // 1
+                self.out.write_all(b"    pop      rdx\n")?; // 2
+                self.out.write_all(b"    push     rdi\n")?; // 2
+                self.out.write_all(b"    push     rdx\n")?; // 1
+            }
+            KeyWord::Drop => {
+                self.out.write_all(b"    pop      rdx\n")?;
+            }
+            KeyWord::Max => {
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rsi\n")?;
+                self.out.write_all(b"    cmp      rdi,rsi\n")?;
+                self.out.write_all(b"    mov      rax,rsi\n")?;
+                self.out.write_all(b"    cmovge   rax,rdi\n")?;
+                self.out.write_all(b"    push     rax\n")?;
+            }
+            KeyWord::Memory => {
+                self.out.write_all(b"    push     mem\n")?;
+            }
+            KeyWord::SysCall1 => self.errors.push(format!(
+                "{} ERROR: {} is not yet implemented yet.",
+                token.span, kw
+            )),
+            KeyWord::SysCall2 => self.errors.push(format!(
+                "{} ERROR: {} is not yet implemented yet.",
+                token.span, kw
+            )),
+            KeyWord::SysCall3 => {
+                self.out.write_all(b"    pop      rax\n")?;
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rsi\n")?;
+                self.out.write_all(b"    pop      rdx\n")?;
+                self.out.write_all(b"    syscall\n")?;
+            }
+            KeyWord::SysCall4 => self.errors.push(format!(
+                "{} ERROR: {} is not yet implemented yet.",
+                token.span, kw
+            )),
+            KeyWord::SysCall5 => self.errors.push(format!(
+                "{} ERROR: {} is not yet implemented yet.",
+                token.span, kw
+            )),
+            KeyWord::SysCall6 => self.errors.push(format!(
+                "{} ERROR: {} is not yet implemented yet.",
+                token.span, kw
+            )),
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
+    fn primitives(
+        &mut self,
+        _stream: &mut Stream<Token>,
+        prim: &Prim,
+        token: &Token,
+    ) -> std::io::Result<()> {
+        match prim {
+            Prim::Int(v) | Prim::Hex(v) => {
+                self.out
+                    .write_all(format!("    push     {}\n", v).as_bytes())?;
+            }
+            Prim::String(string) => {
+                self.data.push((
+                    remove_file_extension(&token.span.start.filename),
+                    token.span.start.idx,
+                    string.to_string(),
+                ));
+                self.out
+                    .write_all(format!("    push     {}\n", string.len()).as_bytes())?;
+                self.out.write_all(
+                    format!(
+                        "    push     data{}{}\n",
+                        remove_file_extension(&token.span.start.filename)
+                            .replace("-", "")
+                            .replace("/", ""),
+                        token.span.start.idx
+                    )
+                    .as_bytes(),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn operators(&mut self, _stream: &mut Stream<Token>, op: &Oper) -> std::io::Result<()> {
+        match op {
+            Oper::Store => {
+                self.out.write_all(b"    pop     rbx\n")?;
+                self.out.write_all(b"    pop     rax\n")?;
+                self.out.write_all(b"    mov     [rax],bl\n")?;
+            }
+            Oper::Load => {
+                self.out.write_all(b"    pop     rax\n")?;
+                self.out.write_all(b"    xor     rbx,rbx\n")?;
+                self.out.write_all(b"    mov     bl,[rax]\n")?;
+            }
+            Oper::Plus => {
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rdx\n")?;
+                self.out.write_all(b"    add      rdx,rdi\n")?;
+                self.out.write_all(b"    push     rdx\n")?;
+            }
+            Oper::Minus => {
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rdx\n")?;
+                self.out.write_all(b"    sub      rdx,rdi\n")?;
+                self.out.write_all(b"    push     rdx\n")?;
+            }
+            Oper::Mul => {
+                self.out.write_all(b"    pop     rax\n")?;
+                self.out.write_all(b"    pop     rbx\n")?;
+                self.out.write_all(b"    mul     rbx\n")?;
+                self.out.write_all(b"    push    rax\n")?;
+            }
+            Oper::Div => {
+                self.out.write_all(b"    pop      rbx\n")?;
+                self.out.write_all(b"    pop      rax\n")?;
+                self.out.write_all(b"    div      rbx\n")?;
+                self.out.write_all(b"    push     rax\n")?;
+            }
+            Oper::Mod => {
+                self.out.write_all(b"    xor      rdx, rdx\n")?;
+                self.out.write_all(b"    pop      rbx\n")?;
+                self.out.write_all(b"    pop      rax\n")?;
+                self.out.write_all(b"    div      rbx\n")?;
+                self.out.write_all(b"    push     rdx\n")?;
+            }
+            Oper::Grt => {
+                self.out.write_all(b"    mov      rbx,0\n")?;
+                self.out.write_all(b"    mov      rdx,1\n")?;
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rsi\n")?;
+                self.out.write_all(b"    cmp      rsi,rdi\n")?;
+                self.out.write_all(b"    cmovg    rbx,rdx\n")?;
+                self.out.write_all(b"    push     rbx\n")?;
+            }
+            Oper::Geq => {
+                self.out.write_all(b"    mov      rbx,0\n")?;
+                self.out.write_all(b"    mov      rdx,1\n")?;
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rsi\n")?;
+                self.out.write_all(b"    cmp      rsi,rdi\n")?;
+                self.out.write_all(b"    cmovge   rbx,rdx\n")?;
+                self.out.write_all(b"    push     rbx\n")?;
+            }
+            Oper::Les => {
+                self.out.write_all(b"    mov      rbx,0\n")?;
+                self.out.write_all(b"    mov      rdx,1\n")?;
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rsi\n")?;
+                self.out.write_all(b"    cmp      rsi,rdi\n")?;
+                self.out.write_all(b"    cmovl    rbx,rdx\n")?;
+                self.out.write_all(b"    push     rbx\n")?;
+            }
+            Oper::Leq => {
+                self.out.write_all(b"    mov      rbx,0\n")?;
+                self.out.write_all(b"    mov      rdx,1\n")?;
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rsi\n")?;
+                self.out.write_all(b"    cmp      rsi,rdi\n")?;
+                self.out.write_all(b"    cmovle   rbx,rdx\n")?;
+                self.out.write_all(b"    push     rbx\n")?;
+            }
+            Oper::Neq => {
+                self.out.write_all(b"    mov      rbx,0\n")?;
+                self.out.write_all(b"    mov      rdx,1\n")?;
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rsi\n")?;
+                self.out.write_all(b"    cmp      rsi,rdi\n")?;
+                self.out.write_all(b"    cmovne   rbx,rdx\n")?;
+                self.out.write_all(b"    push     rbx\n")?;
+            }
+            Oper::Eq => {
+                self.out.write_all(b"    mov      rbx,0\n")?;
+                self.out.write_all(b"    mov      rdx,1\n")?;
+                self.out.write_all(b"    pop      rdi\n")?;
+                self.out.write_all(b"    pop      rsi\n")?;
+                self.out.write_all(b"    cmp      rsi,rdi\n")?;
+                self.out.write_all(b"    cmove    rbx,rdx\n")?;
+                self.out.write_all(b"    push     rbx\n")?;
+            }
+        }
+        Ok(())
+    }
+
+    fn constant(&mut self, stream: &mut Stream<Token>, const_token: &Token) -> std::io::Result<()> {
+        if let Some(token1) = stream.next() {
+            match &token1.kind {
+                Kind::Id(id1) => {
+                    let mut stack: Vec<usize> = Vec::new();
+                    while let Some(token2) =
+                        stream.next_if(|t| t.kind != Kind::KeyWord(KeyWord::End))
+                    {
+                        match &token2.kind {
+                            Kind::Id(id2) => {
+                                if let Some(&Value::Const(num)) = self.global.get(id2) {
+                                    stack.push(num);
+                                } else {
+                                    self.errors.push(format!(
+                                        "{} Error: {} is not defined.",
+                                        token2.span, id2
+                                    ));
+                                }
+                            }
+                            Kind::KeyWord(KeyWord::Const) => {
+                                self.errors
+                                        .push(
+                                            format!("{} Error: `const` Keyword is not allowed in another `const` definition", token2.span)
+                                        );
+                                break;
+                            }
+                            Kind::KeyWord(_) => {}
+                            Kind::Prim(prim) => match prim {
+                                Prim::Int(i) => stack.push(i.parse().unwrap()),
+                                _ => self.errors.push(format!(
+                                    "{} Error: Unsupported const Type <String>",
+                                    token2.span,
+                                )),
+                            },
+                            Kind::Oper(op) => match op {
+                                Oper::Store => {
+                                    self.errors.push(format!(
+                                                "{} Error: Unsupported {} operation in side a 'const declaration'.",
+                                                token2.span, token2.kind
+                                        ));
+                                    break;
+                                }
+                                Oper::Load => {
+                                    self.errors.push(format!(
+                                                "{} Error: Unsupported {} operation in side a 'const declaration'.",
+                                                token2.span, token2.kind
+                                        ));
+                                    break;
+                                }
+                                Oper::Plus => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push(l + r);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Minus => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push(l - r);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Mul => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push(l * r);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Div => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push(l / r);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Mod => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push(l % r);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Grt => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push((l > r) as usize);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Geq => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push((l >= r) as usize);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Les => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push((l < r) as usize);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Leq => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push((l < r) as usize);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Neq => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push((l != r) as usize);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                                Oper::Eq => {
+                                    if let (Some(r), Some(l)) = (stack.pop(), stack.pop()) {
+                                        stack.push((l == r) as usize);
+                                    } else {
+                                        self.errors.push(format!(
+                                            "{} Error: Not enough items on stack to {} to.",
+                                            token2.span, token2.kind
+                                        ));
+                                        break;
+                                    }
+                                }
+                            },
+                        }
+                    }
+                    if stack.is_empty() {
+                        self.errors.push(format!(
+                            "{} Error: Nothing to assine to '{}' const variable.",
+                            token1.span, id1
+                        ));
+                    } else if stack.len() > 1 {
+                        self.errors.push(format!(
+                                "{} Error: To Many values to assine to '{}' const variable left on stack.",
+                                token1.span, id1
+                        ));
+                    } else {
+                        self.global
+                            .insert(id1.to_string(), Value::Const(stack.pop().unwrap()));
+                    }
+                    let _ = stream.next();
+                }
+                _ => self.errors.push(format!(
+                    "{} Error: No const variable name was give.",
+                    const_token.span
+                )),
+            }
+        }
+        Ok(())
+    }
 }
 
 fn snack_source_file(filename: &str) -> Result<String, String> {
@@ -1450,6 +1459,7 @@ fn remove_file_extension(filename: &str) -> String {
     filename.split('.').collect::<Vec<&str>>()[0].to_string()
 }
 
+#[derive(Debug, Clone)]
 pub struct Flags {
     pub program: String,
     pub file: String,
@@ -1515,10 +1525,10 @@ fn scanner(filename: &str) -> (Vec<Token>, Vec<String>) {
     (scanner.tokens, scanner.errors)
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
     let flags = Flags::new();
     printhelp(&flags);
-    let (mut tokens, errors) = scanner(&flags.name_ext());
+    let (tokens, errors) = scanner(&flags.name_ext());
     if flags.debug {
         for token in tokens.iter() {
             eprintln!("{}", token);
@@ -1532,7 +1542,9 @@ fn main() {
         }
         std::process::exit(2);
     }
-    match compile_to_fasm_x86_64(&flags, &mut tokens) {
+    let mut compler = FasmCompiler::new(flags.clone(), tokens)?;
+    // match compile_to_fasm_x86_64(&flags, &mut tokens) {
+    match compler.compiler() {
         Ok(errors) => {
             for e in errors.iter() {
                 eprintln!("{}", e);
@@ -1565,4 +1577,5 @@ fn main() {
         );
         std::process::exit(2);
     }
+    Ok(())
 }

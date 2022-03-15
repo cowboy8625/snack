@@ -40,7 +40,7 @@ for f in snacks:
         except Exception as e:
             print(f"{snack_rel} needs a expected output named {text_path} file to be tested.")
 
-for expected, got in errors:
+for expected, *got in errors:
     print(f"------{snack_rel}-------")
     print("[Expected]:")
     print(expected)

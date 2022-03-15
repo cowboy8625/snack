@@ -1,11 +1,16 @@
-word helloWorld in
-    0 while copy 10 < do
-        "Hello World!\n" 1 1 syscall3
-        1 +
-    end
-    drop
+word write size ptr in
+  1 1 syscall3
+end
+
+word helloWorld count in
+  0 while over over swap < do
+    "Hello World!\n" write
+    1 +
+
+  end drop
+  "Done\n" write
 end
 
 word main in
-    helloWorld
+  10 helloWorld
 end
