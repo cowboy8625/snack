@@ -1,5 +1,0 @@
-use lib
-
-word main do
-    "Hello World!\n" write
-end

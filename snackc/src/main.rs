@@ -946,13 +946,23 @@ impl FasmCompiler {
                     // Tokenizes file and adds tokens to stream.
                     // Adds Words to global Word list.
                     let filename = format!("{}.snack", name);
-                    let (_import_tokens, errs) = scanner(&filename);
+                    let (mut import_tokens, errs) = scanner(&filename);
                     if !errs.is_empty() {
                         self.errors.extend_from_slice(&errs);
                         return Ok(());
                     }
-                    // kind(out, flags, &import_tokens, errors, data, global_dec)?;
-                    // stream.insert_from_slice(&import_tokens);
+
+                    let mut words: HashMap<String, Vec<Token>> = HashMap::new();
+                    if !build_global(&mut import_tokens, &mut words) {
+                        self.errors.push(
+                            "Multiple-Main-Error: Libraries can not have main word declaration."
+                                .into(),
+                        );
+                    }
+                    self.kind(&import_tokens)?;
+                    for (_, tokens) in words.iter() {
+                        self.kind(tokens)?;
+                    }
                 } else {
                     self.errors
                         .push(format!("{} Error: Use requires path", token.span,));

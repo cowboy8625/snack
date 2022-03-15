@@ -1,6 +1,4 @@
-word write size ptr in
-  1 1 syscall3
-end
+use std
 
 word helloWorld count in
   0 while over over swap < do

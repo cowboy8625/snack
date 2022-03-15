@@ -1,4 +1,4 @@
 // size -> int: size of string
-word size ptr in
+word write size ptr in
     1 1 syscall3
 end
