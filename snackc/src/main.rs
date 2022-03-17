@@ -65,6 +65,10 @@ pub enum KeyWord {
     Else,
     End,
     Return,
+    And,
+    Or,
+    True,
+    False,
     Dot,
     Copy,
     Over,
@@ -96,6 +100,10 @@ impl KeyWord {
             "else" => Some(Else),
             "end" => Some(End),
             "return" => Some(Return),
+            "and" => Some(And),
+            "or" => Some(Or),
+            "true" => Some(True),
+            "false" => Some(False),
             "." => Some(Dot),
             "copy" => Some(Copy),
             "over" => Some(Over),
@@ -129,6 +137,10 @@ impl fmt::Display for KeyWord {
             Self::Else => write!(f, "else"),
             Self::End => write!(f, "end"),
             Self::Return => write!(f, "return"),
+            Self::And => write!(f, "and"),
+            Self::Or => write!(f, "or"),
+            Self::True => write!(f, "true"),
+            Self::False => write!(f, "false"),
             Self::Dot => write!(f, "."),
             Self::Copy => write!(f, "copy"),
             Self::Over => write!(f, "over"),
@@ -819,7 +831,12 @@ impl<'a> FasmCompiler {
         let args: [&str; 5] = ["rdi", "rsi", "rdx", "rcx", "r8d"];
         for idx in 0..counter {
             self.out.write_all(
-                format!("    mov      qword [rbp-{}],{}\n", (idx * 8) + 8, args[idx]).as_bytes(),
+                format!(
+                    "    mov      qword [rbp-{}],{}\n",
+                    (idx * 64) + 64,
+                    args[idx]
+                )
+                .as_bytes(),
             )?;
         }
         Ok(())
@@ -969,7 +986,7 @@ impl FasmCompiler {
             }) {
                 Some(i) => self
                     .out
-                    .write_all(format!("    push     qword [rbp-{}]\n", i * 8 + 8).as_bytes())?,
+                    .write_all(format!("    push     qword [rbp-{}]\n", i * 64 + 64).as_bytes())?,
                 _ => self
                     .errors
                     .push(format!("{} Error: UnKnown word `{}`.", token.span, id)),
@@ -1106,10 +1123,50 @@ impl FasmCompiler {
         }
         Ok(())
     }
+    fn and_keyword(&mut self, token: &Token) -> std::io::Result<()> {
+        let failed = format!("failed{}", token.id());
+        let passed = format!("passed{}", token.id());
+
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    pop      rbx\n")?;
+        self.out.write_all(b"    test     rax,rbx\n")?;
+        self.fasm_jmp("jz", &failed)?;
+
+        self.fasm_push("1")?;
+        self.fasm_jmp("jmp", &passed)?;
+
+        self.fasm_label(&failed)?;
+        self.fasm_push("0")?;
+
+        self.fasm_label(&passed)?;
+        Ok(())
+    }
+
+    fn or_keyword(&mut self, token: &Token) -> std::io::Result<()> {
+        let failed = format!("failed{}", token.id());
+        let passed = format!("passed{}", token.id());
+
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    pop      rbx\n")?;
+        self.out.write_all(b"    or       rax,rbx\n")?;
+        self.fasm_jmp("jz", &failed)?;
+
+        self.fasm_push("1")?;
+        self.fasm_jmp("jmp", &passed)?;
+
+        self.fasm_label(&failed)?;
+        self.fasm_push("0")?;
+
+        self.fasm_label(&passed)?;
+        Ok(())
+    }
 
     fn dot_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    mov      rdx,rdi\n")?;
         self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    push     rdx\n")?;
         self.out.write_all(b"    call     dbg_int\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
         Ok(())
     }
 
@@ -1235,6 +1292,10 @@ impl FasmCompiler {
             KeyWord::Else => self.else_keyword(token)?,
             KeyWord::End => self.end_keyword(token)?,
             KeyWord::Return => self.return_keyword(token)?,
+            KeyWord::And => self.and_keyword(token)?,
+            KeyWord::Or => self.or_keyword(token)?,
+            KeyWord::True => self.fasm_push("1")?,
+            KeyWord::False => self.fasm_push("0")?,
             KeyWord::Dot => self.dot_keyword()?,
             KeyWord::Copy => self.copy_keyword()?,
             KeyWord::Over => self.over_keyword()?,
@@ -1351,46 +1412,46 @@ impl FasmCompiler {
     }
 
     fn grt_op(&mut self) -> std::io::Result<()> {
-        self.out.write_all(b"    mov      rbx,0\n")?;
-        self.out.write_all(b"    mov      rdx,1\n")?;
-        self.out.write_all(b"    pop      rdi\n")?;
-        self.out.write_all(b"    pop      rsi\n")?;
-        self.out.write_all(b"    cmp      rsi,rdi\n")?;
-        self.out.write_all(b"    cmovg    rbx,rdx\n")?;
-        self.out.write_all(b"    push     rbx\n")?;
+        self.out.write_all(b"    mov         rcx,0\n")?;
+        self.out.write_all(b"    mov         rdx,1\n")?;
+        self.out.write_all(b"    pop         rbx\n")?;
+        self.out.write_all(b"    pop         rax\n")?;
+        self.out.write_all(b"    cmp         rax,rbx\n")?;
+        self.out.write_all(b"    cmovg       rcx,rdx\n")?;
+        self.out.write_all(b"    push        rcx\n")?;
         Ok(())
     }
 
     fn geq_op(&mut self) -> std::io::Result<()> {
-        self.out.write_all(b"    mov      rbx,0\n")?;
-        self.out.write_all(b"    mov      rdx,1\n")?;
-        self.out.write_all(b"    pop      rdi\n")?;
-        self.out.write_all(b"    pop      rsi\n")?;
-        self.out.write_all(b"    cmp      rsi,rdi\n")?;
-        self.out.write_all(b"    cmovge   rbx,rdx\n")?;
-        self.out.write_all(b"    push     rbx\n")?;
+        self.out.write_all(b"    mov     rcx,0\n")?;
+        self.out.write_all(b"    mov     rdx,1\n")?;
+        self.out.write_all(b"    pop     rbx\n")?;
+        self.out.write_all(b"    pop     rax\n")?;
+        self.out.write_all(b"    cmp     rax,rbx\n")?;
+        self.out.write_all(b"    cmovge  rcx,rdx\n")?;
+        self.out.write_all(b"    push    rcx\n")?;
         Ok(())
     }
 
     fn les_op(&mut self) -> std::io::Result<()> {
-        self.out.write_all(b"    mov      rbx,0\n")?;
-        self.out.write_all(b"    mov      rdx,1\n")?;
-        self.out.write_all(b"    pop      rdi\n")?;
-        self.out.write_all(b"    pop      rsi\n")?;
-        self.out.write_all(b"    cmp      rsi,rdi\n")?;
-        self.out.write_all(b"    cmovl    rbx,rdx\n")?;
-        self.out.write_all(b"    push     rbx\n")?;
+        self.out.write_all(b"    mov     rcx, 0\n")?;
+        self.out.write_all(b"    mov     rdx, 1\n")?;
+        self.out.write_all(b"    pop     rbx\n")?;
+        self.out.write_all(b"    pop     rax\n")?;
+        self.out.write_all(b"    cmp     rax, rbx\n")?;
+        self.out.write_all(b"    cmovl   rcx, rdx\n")?;
+        self.out.write_all(b"    push    rcx\n")?;
         Ok(())
     }
 
     fn leq_op(&mut self) -> std::io::Result<()> {
-        self.out.write_all(b"    mov      rbx,0\n")?;
-        self.out.write_all(b"    mov      rdx,1\n")?;
-        self.out.write_all(b"    pop      rdi\n")?;
-        self.out.write_all(b"    pop      rsi\n")?;
-        self.out.write_all(b"    cmp      rsi,rdi\n")?;
-        self.out.write_all(b"    cmovle   rbx,rdx\n")?;
-        self.out.write_all(b"    push     rbx\n")?;
+        self.out.write_all(b"    mov     rcx,0\n")?;
+        self.out.write_all(b"    mov     rdx,1\n")?;
+        self.out.write_all(b"    pop     rbx\n")?;
+        self.out.write_all(b"    pop     rax\n")?;
+        self.out.write_all(b"    cmp     rax,rbx\n")?;
+        self.out.write_all(b"    cmovle  rcx,rdx\n")?;
+        self.out.write_all(b"    push    rcx\n")?;
         Ok(())
     }
 
