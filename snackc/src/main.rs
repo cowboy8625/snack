@@ -7,60 +7,6 @@ use std::{fmt, iter::Peekable};
 const MEMORY: u32 = 640_000;
 type Stream<'a, T> = Peekable<std::slice::Iter<'a, T>>;
 
-// #[derive(Debug, Default)]
-// struct Streamer<T> {
-//     tokens: Vec<T>,
-//     tp: usize,
-// }
-//
-// impl<T> Streamer<T>
-// where
-//     T: Clone,
-// {
-//     fn new(tokens: Vec<T>) -> Self {
-//         Self { tokens, tp: 0 }
-//     }
-//     fn push(&mut self, item: T) {
-//         self.tokens.push(item);
-//     }
-//     fn insert_from_slice(&mut self, slice: &[T]) {
-//         for (i, item) in slice.iter().enumerate() {
-//             self.tokens.insert(self.tp + i, item.clone());
-//         }
-//     }
-//     pub fn next_if(&mut self, func: impl FnOnce(&T) -> bool) -> Option<T> {
-//         match self.next() {
-//             Some(matched) if func(&matched) => Some(matched),
-//             _ => None,
-//         }
-//     }
-//
-//     pub fn peek(&mut self) -> Option<&T> {
-//         self.tokens.get(self.tp + 1)
-//     }
-// }
-//
-// impl<T> From<&[T]> for Streamer<T>
-// where
-//     T: Clone,
-// {
-//     fn from(items: &[T]) -> Self {
-//         Self::new(items.to_vec())
-//     }
-// }
-//
-// impl<T> Iterator for Streamer<T>
-// where
-//     T: Clone,
-// {
-//     type Item = T;
-//     fn next(&mut self) -> Option<Self::Item> {
-//         let tp = self.tp;
-//         self.tp += 1;
-//         self.tokens.get(tp).cloned()
-//     }
-// }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pos {
     pub filename: String,
@@ -72,7 +18,7 @@ pub struct Pos {
 impl Pos {
     fn addr(&self) -> String {
         format!(
-            "{}{}:\n",
+            "{}{}",
             remove_file_extension(&self.filename)
                 .replace("-", "")
                 .replace("/", ""),
@@ -118,6 +64,7 @@ pub enum KeyWord {
     ElIf,
     Else,
     End,
+    Return,
     Dot,
     Copy,
     Over,
@@ -147,7 +94,8 @@ impl KeyWord {
             "if" => Some(If),
             "elif" => Some(ElIf),
             "else" => Some(Else),
-            "end" => Some(End), // (EndKind::UnBound)),
+            "end" => Some(End),
+            "return" => Some(Return),
             "." => Some(Dot),
             "copy" => Some(Copy),
             "over" => Some(Over),
@@ -179,8 +127,8 @@ impl fmt::Display for KeyWord {
             Self::If => write!(f, "if"),
             Self::ElIf => write!(f, "elif"),
             Self::Else => write!(f, "else"),
-            // Self::End(t) => write!(f, "end {}", t),
             Self::End => write!(f, "end"),
+            Self::Return => write!(f, "return"),
             Self::Dot => write!(f, "."),
             Self::Copy => write!(f, "copy"),
             Self::Over => write!(f, "over"),
@@ -331,6 +279,14 @@ impl Token {
     pub fn id(&self) -> usize {
         self.span.start.idx
     }
+
+    pub fn addr(&self) -> String {
+        self.span.start.addr()
+    }
+
+    pub fn jump(&self) -> String {
+        self.span.start.jump()
+    }
 }
 
 pub struct Scanner<'a> {
@@ -338,7 +294,6 @@ pub struct Scanner<'a> {
     pub tokens: Vec<Token>,
     pub errors: Vec<String>,
     block: Vec<(usize, Kind)>,
-    //current: Option<(char, Pos)>,
 }
 
 impl<'a> Scanner<'a> {
@@ -527,12 +482,18 @@ impl<'a> Scanner<'a> {
     }
 
     pub fn link(mut self) -> Self {
+        let mut words: Vec<usize> = Vec::new();
+        let mut return_link_loc: Vec<(usize, usize)> = Vec::new();
         let mut stack: Vec<Token> = Vec::new();
-        for tok in self.tokens.iter_mut().rev() {
+        for (idx, tok) in self.tokens.iter_mut().enumerate().rev() {
             match tok.kind {
                 // End needs to know jump if its ending a while loop.
                 Kind::KeyWord(KeyWord::End) => {
+                    words.push(idx);
                     stack.push(tok.clone());
+                }
+                Kind::KeyWord(KeyWord::Return) => {
+                    words.push(idx);
                 }
                 // Else needs to know end
                 Kind::KeyWord(KeyWord::Else) if !stack.is_empty() => {
@@ -558,37 +519,48 @@ impl<'a> Scanner<'a> {
                     tok.end_mut(Some(last.id()));
                     stack.push(tok.clone());
                 }
-                Kind::KeyWord(KeyWord::If)
-                    if !stack.is_empty() =>
-                    {
-                        let last = stack.pop().unwrap();
-                        tok.end_mut(Some(last.id()));
-                        tok.jump_mut(Some(last.id()));
-                    }
+                Kind::KeyWord(KeyWord::If) if !stack.is_empty() => {
+                    let last = stack.pop().unwrap();
+                    tok.end_mut(Some(last.id()));
+                    tok.jump_mut(Some(last.id()));
+                }
                 Kind::KeyWord(KeyWord::Word | KeyWord::While | KeyWord::Const)
                     if !stack.is_empty() =>
-                    {
-                        let last = stack.pop().unwrap();
-                        tok.end_mut(Some(last.id()));
+                {
+                    if matches!(tok.kind, Kind::KeyWord(KeyWord::Word)) {
+                        if words.len() == 1 {
+                            words.clear();
+                        } else if words.len() == 2 {
+                            return_link_loc.push((words[1], words[0]));
+                            words.clear();
+                        }
                     }
+                    let last = stack.pop().unwrap();
+                    tok.end_mut(Some(last.id()));
+                }
                 Kind::KeyWord(
                     KeyWord::Const
-                    | KeyWord::Word
-                    // | KeyWord::In
                     | KeyWord::While
                     | KeyWord::Do
                     | KeyWord::If
                     | KeyWord::ElIf
                     | KeyWord::Else,
-                ) => if stack.is_empty() {
-                    self.errors.push(format!(
+                ) => {
+                    if stack.is_empty() {
+                        self.errors.push(format!(
                             "{} Error: {} is missing 'end' closing block.",
                             tok.span, tok.kind
-                    ));
+                        ));
+                    }
                 }
-                _ => {
-                }
+                _ => {}
             }
+        }
+        for (ret, end) in return_link_loc.iter() {
+            let end_tok_id = self.tokens.get(*end).unwrap().id();
+            self.tokens
+                .get_mut(*ret)
+                .map(|tok| tok.end_mut(Some(end_tok_id)));
         }
         self
     }
@@ -624,12 +596,42 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Const(i) => write!(f, "{}", i),
-            Self::Word(name, count) => write!(f, "{}, {}", name, count),
+            Self::Word(name, count) => write!(f, "{}, {:?}", name, count),
         }
     }
 }
+fn find_memory_definitions(tokens: &mut Vec<Token>, mem: &mut Vec<(String, Vec<Token>)>) {
+    let memloc: Vec<usize> = tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, tok)| tok.kind == Kind::KeyWord(KeyWord::Memory))
+        .map(|(start, _)| start)
+        .collect();
 
-fn build_global(tokens: &mut Vec<Token>, words: &mut HashMap<String, Vec<Token>>) -> bool {
+    let endloc: Vec<usize> = tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, tok)| tok.kind == Kind::KeyWord(KeyWord::End) && tok.ret)
+        .map(|(end, _)| end)
+        .collect();
+
+    for (start, end) in memloc.iter().zip(endloc).rev() {
+        let mut memtok: Vec<Token> = Vec::new();
+        let mut memname = String::new();
+        let mut last: Option<Kind> = None;
+        for t in tokens.drain(*start..=end) {
+            if let (Some(Kind::KeyWord(KeyWord::Memory)), Kind::Id(name)) = (&last, &t.kind) {
+                memname = name.to_owned();
+            }
+            last = Some(t.kind.clone());
+            memtok.push(t.clone());
+        }
+        mem.push((memname, memtok));
+    }
+    mem.reverse();
+}
+
+fn find_word_definitions(tokens: &mut Vec<Token>, words: &mut Vec<(String, Vec<Token>)>) -> bool {
     let wordloc: Vec<usize> = tokens
         .iter()
         .enumerate()
@@ -644,6 +646,7 @@ fn build_global(tokens: &mut Vec<Token>, words: &mut HashMap<String, Vec<Token>>
         .map(|(end, _)| end)
         .collect();
 
+    let mut contains_main_word = false;
     // Taking all Functions out of tokens.
     for (start, end) in wordloc.iter().zip(endloc).rev() {
         let mut wordtok: Vec<Token> = Vec::new();
@@ -656,20 +659,23 @@ fn build_global(tokens: &mut Vec<Token>, words: &mut HashMap<String, Vec<Token>>
             last = Some(t.kind.clone());
             wordtok.push(t.clone());
         }
-        words.insert(wordname, wordtok);
+        if wordname == "main" {
+            contains_main_word = true;
+        }
+        words.push((wordname, wordtok));
     }
-    if !words.contains_key("main") {
-        return true;
-    }
-    false
+    words.reverse();
+    contains_main_word
 }
 
 pub struct FasmCompiler {
     out: std::fs::File,
     tokens: Vec<Token>,
-    words: HashMap<String, Vec<Token>>,
+    words: Vec<(String, Vec<Token>)>,
+    main: Vec<Token>,
     data: Vec<(String, usize, String)>,
     global: HashMap<String, Value>,
+    local: Vec<Token>,
     errors: Vec<String>,
     flags: Flags,
 }
@@ -683,18 +689,20 @@ impl<'a> FasmCompiler {
             .truncate(true)
             .create(true)
             .open(filename)?;
-        // let stream = Streamer::new(tokens);
         let global = HashMap::new();
+        let local = Vec::new();
         let errors = Vec::new();
-        let words = HashMap::new();
+        let words = Vec::new();
+        let main = Vec::new();
         let data = Vec::new();
         Ok(Self {
             out,
             tokens,
-            // stream,
             words,
+            main,
             data,
             global,
+            local,
             errors,
             flags,
         })
@@ -707,7 +715,7 @@ impl<'a> FasmCompiler {
         Ok(())
     }
     fn fasm_print(&mut self) -> std::io::Result<()> {
-        self.out.write_all(b"print:\n")?;
+        self.out.write_all(b"dbg_int:\n")?;
         self.out
             .write_all(b"    mov     r9, -3689348814741910323\n")?;
         self.out.write_all(b"    sub     rsp, 40\n")?;
@@ -790,60 +798,99 @@ impl<'a> FasmCompiler {
         self.out.write_all(b"    mov      rbp, rsp\n")?;
         Ok(())
     }
+
+    // fn fasm_save_regs(&mut self) -> std::io::Result<()> {
+    //     self.out.write_all(b"    push     rdi\n")?;
+    //     self.out.write_all(b"    push     rsi\n")?;
+    //     self.out.write_all(b"    push     rdx\n")?;
+    //     self.out.write_all(b"    push     rcx\n")?;
+    //     Ok(())
+    // }
+    // fn fasm_restore_regs(&mut self) -> std::io::Result<()> {
+    //     self.out.write_all(b"    pop     rcx\n")?;
+    //     self.out.write_all(b"    pop     rdx\n")?;
+    //     self.out.write_all(b"    pop     rsi\n")?;
+    //     self.out.write_all(b"    pop     rdi\n")?;
+    //     Ok(())
+    // }
+
     fn create_pass_fasm_arguments(&mut self, counter: usize) -> std::io::Result<()> {
-        assert!(counter <= 2);
-        let args: [&str; 2] = ["edi", "esi"];
-        let ret: [&str; 2] = ["ax", "bx"];
+        assert!(counter <= 4);
+        let args: [&str; 5] = ["rdi", "rsi", "rdx", "rcx", "r8d"];
         for idx in 0..counter {
             self.out.write_all(
-                format!("    mov      dword [rbp-{}],{}\n", (idx * 4) + 4, args[idx]).as_bytes(),
+                format!("    mov      qword [rbp-{}],{}\n", (idx * 8) + 8, args[idx]).as_bytes(),
             )?;
-            self.out.write_all(
-                format!("    mov      e{},dword [rbp-{}]\n", ret[idx], (idx * 4) + 4).as_bytes(),
-            )?;
-        }
-        for idx in 0..counter {
-            self.out
-                .write_all(format!("    push      r{}\n", ret[idx]).as_bytes())?;
         }
         Ok(())
     }
-    fn label(&mut self, name: &str) -> std::io::Result<()> {
-        self.out.write_all(format!("{}:\n", name).as_bytes())?;
+
+    fn fasm_label(&mut self, name: &str) -> std::io::Result<()> {
+        self.out.write_all(format!("__{}__:\n", name).as_bytes())?;
+        Ok(())
+    }
+
+    fn fasm_push(&mut self, value: &str) -> std::io::Result<()> {
+        self.out
+            .write_all(format!("    push    {}\n", value).as_bytes())?;
+        Ok(())
+    }
+
+    fn fasm_jmp(&mut self, jump: &str, value: &str) -> std::io::Result<()> {
+        self.out
+            .write_all(format!("    {}    __{}__\n", jump, value).as_bytes())?;
+        Ok(())
+    }
+
+    fn fasm_call(&mut self, name: &str) -> std::io::Result<()> {
+        self.out
+            .write_all(format!("    call     __{}__\n", name).as_bytes())?;
         Ok(())
     }
 }
 
 impl FasmCompiler {
     fn compiler(&mut self) -> std::io::Result<Vec<String>> {
-        if build_global(&mut self.tokens, &mut self.words) {
+        self.get_word_definitions()?;
+        let mut mem = Vec::new();
+        find_memory_definitions(&mut self.tokens, &mut mem);
+        self.fasm_header(FasmCompiler::ENTRY_POINT)?;
+        self.fasm_print()?;
+        self.compile_globels()?;
+        self.compile_main()?;
+        self.fasm_exit()?;
+        self.fasm_footer()?;
+        Ok(self.errors.clone())
+    }
+
+    fn get_word_definitions(&mut self) -> std::io::Result<()> {
+        if !find_word_definitions(&mut self.tokens, &mut self.words) {
             self.errors
                 .push("NoMainError: Main entry point must be declared.".into());
         }
+        Ok(())
+    }
 
-        self.fasm_header(FasmCompiler::ENTRY_POINT)?;
-        self.fasm_print()?;
-
+    fn compile_globels(&mut self) -> std::io::Result<()> {
         self.kind(&self.tokens.clone())?;
 
         let words = self.words.clone();
         for (name, tokens) in words.iter() {
             if name != "main" {
                 self.kind(tokens)?;
+            } else {
+                self.main = tokens.to_vec();
             }
         }
+        Ok(())
+    }
 
-        self.label(FasmCompiler::ENTRY_POINT)?;
-
-        let main_word = self.words.get("main").cloned();
-        if let Some(main) = main_word {
-            let body = &main[3..main.len() - 1];
-            self.kind(body)?;
-        }
-
-        self.fasm_exit()?;
-        self.fasm_footer()?;
-        Ok(self.errors.clone())
+    fn compile_main(&mut self) -> std::io::Result<()> {
+        self.out
+            .write_all(format!("{}:\n", FasmCompiler::ENTRY_POINT).as_bytes())?;
+        let body = &self.main[3..self.main.len() - 1].to_vec();
+        self.kind(body)?;
+        Ok(())
     }
 
     fn kind(&mut self, tokens: &[Token]) -> std::io::Result<()> {
@@ -867,20 +914,20 @@ impl FasmCompiler {
         if let Some(tokenid) = stream.next() {
             match &tokenid.kind {
                 Kind::Id(name) => {
-                    let mut arg_count = 0;
                     if !self.global.contains_key(name) {
-                        self.out.write_all(format!("{}:\n", name).as_bytes())?;
+                        self.fasm_label(name)?;
                     } else {
                         self.errors.push(format!(
                             "{} NameAlreadyDefinedError: {} is already defind.",
                             tokenid.span, tokenid.kind
                         ));
                     }
-                    while let Some(_name) =
+                    while let Some(name) =
                         stream.next_if(|tok| tok.kind != Kind::KeyWord(KeyWord::In))
                     {
-                        arg_count += 1;
+                        self.local.push(name.clone());
                     }
+                    let arg_count = self.local.len();
                     self.global
                         .insert(name.clone(), Value::Word(name.clone(), arg_count));
                     self.fasm_prologue()?;
@@ -904,29 +951,270 @@ impl FasmCompiler {
         let value = self.global.get(id).cloned();
         match value {
             Some(v) => match v {
-                Value::Const(i) => self
-                    .out
-                    .write_all(format!("    push     {}\n", i).as_bytes())?,
+                Value::Const(i) => self.fasm_push(&i.to_string())?,
                 Value::Word(name, count) => self.call(&name, count)?,
             },
-            _ => self
-                .errors
-                .push(format!("{} Error: UnKnown variable `{}`.", token.span, id)),
+            _ => match self.local.iter().enumerate().find_map(|(i, t)| {
+                if match t {
+                    Token {
+                        kind: Kind::Id(name),
+                        ..
+                    } => id == name,
+                    _ => false,
+                } {
+                    Some(i)
+                } else {
+                    None
+                }
+            }) {
+                Some(i) => self
+                    .out
+                    .write_all(format!("    push     qword [rbp-{}]\n", i * 8 + 8).as_bytes())?,
+                _ => self
+                    .errors
+                    .push(format!("{} Error: UnKnown word `{}`.", token.span, id)),
+            },
         }
         Ok(())
     }
 
     fn call(&mut self, name: &str, count: usize) -> std::io::Result<()> {
-        if count > 2 {
+        if count > 4 {
             panic!("We don't know how to handle more arguments");
         }
-        let args: [&str; 2] = ["rdi", "rsi"];
+        let args: [&str; 4] = ["rdi", "rsi", "rdx", "rcx"];
         for reg in args[0..count].iter().rev() {
             self.out
                 .write_all(format!("    pop     {}\n", reg).as_bytes())?;
         }
-        self.out
-            .write_all(format!("    call     {}\n", name).as_bytes())?;
+        self.fasm_call(name)?;
+        // FIXME: I think the type system will trigger this
+        // to know how many reg's to push on the stack.
+        self.fasm_push("rax")?;
+        Ok(())
+    }
+
+    fn import_file(&mut self, stream: &mut Stream<Token>, token: &Token) -> std::io::Result<()> {
+        if let Some(Token {
+            kind: Kind::Id(name),
+            ..
+        }) = stream.next()
+        {
+            // Tokenizes file and adds tokens to stream.
+            // Adds Words to global Word list.
+            let filename = format!("{}.snack", name);
+            let (mut import_tokens, errs) = scanner(&filename);
+            if !errs.is_empty() {
+                self.errors.extend_from_slice(&errs);
+                return Ok(());
+            }
+
+            let mut words: Vec<(String, Vec<Token>)> = Vec::new();
+            if find_word_definitions(&mut import_tokens, &mut words) {
+                self.errors.push(
+                    "Multiple-Main-Error: Libraries can not have main word declaration.".into(),
+                );
+            }
+            self.kind(&import_tokens)?;
+            for (_, tokens) in words.iter() {
+                self.kind(tokens)?;
+            }
+        } else {
+            self.errors
+                .push(format!("{} Error: Use requires path", token.span,));
+        }
+        Ok(())
+    }
+
+    fn do_keyword(&mut self, token: &Token) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rbx\n")?;
+        self.out.write_all(b"    test     rbx,rbx\n")?;
+        if let Some(e) = token.end {
+            self.fasm_jmp("jz", &format!("{}{}", token.jump(), e))?;
+        } else {
+            self.errors.push(format!(
+                "{} Error: Do block missing `end` closing block. This could be a compiler bug.",
+                token.span,
+            ));
+        }
+        Ok(())
+    }
+
+    fn if_keyword(&mut self, token: &Token) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rbx\n")?;
+        self.out.write_all(b"    test     rbx,rbx\n")?;
+        if let Some(j) = token.jump {
+            self.fasm_jmp("jz", &format!("{}{}", token.jump(), j))?;
+        }
+        Ok(())
+    }
+
+    fn elif_keyword(&mut self, token: &Token) -> std::io::Result<()> {
+        self.fasm_label(&token.addr())?;
+        self.out.write_all(b"    pop     rbx\n")?;
+        self.out.write_all(b"    test    rbx,rbx\n")?;
+        if let Some(j) = token.jump {
+            self.fasm_jmp("jz", &format!("{}{}", token.jump(), j))?;
+        } else if let Some(e) = token.end {
+            self.fasm_jmp("jz", &format!("{}{}", token.jump(), e))?;
+        } else {
+            self.errors.push(format!(
+                "{} Error: elif statement missing `end` closing block.",
+                token.span,
+            ));
+        }
+        Ok(())
+    }
+
+    fn else_keyword(&mut self, token: &Token) -> std::io::Result<()> {
+        if let Some(e) = token.end {
+            self.fasm_jmp("jmp", &format!("{}{}", token.jump(), e))?;
+        } else {
+            self.errors.push(format!(
+                "{} Error: Else statement missing `end` closing block.",
+                token.span,
+            ));
+        }
+        self.fasm_label(&token.addr())?;
+        Ok(())
+    }
+
+    fn end_keyword(&mut self, token: &Token) -> std::io::Result<()> {
+        if let (Some(j), false) = (token.jump, token.ret) {
+            self.fasm_jmp("jmp", &format!("{}{}", token.jump(), j))?;
+        } else if let Some(_e) = token.end {
+            self.fasm_label(&token.addr())?;
+        }
+        self.fasm_label(&token.addr())?;
+        if token.ret {
+            self.local.clear();
+            self.out.write_all(b"    pop      rbp\n")?;
+            self.out.write_all(b"    ret\n")?;
+        }
+        Ok(())
+    }
+
+    fn return_keyword(&mut self, token: &Token) -> std::io::Result<()> {
+        if let Some(e) = token.end {
+            self.out.write_all(b"    pop      rax\n")?;
+            self.fasm_jmp("jmp", &format!("{}{}", token.jump(), e))?;
+        } else {
+            self.errors.push(format!(
+                "{} Error: return missing `end` closing block",
+                token.span,
+            ));
+        }
+        Ok(())
+    }
+
+    fn dot_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    call     dbg_int\n")?;
+        Ok(())
+    }
+
+    fn copy_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    push     rdi\n")?;
+        self.out.write_all(b"    push     rdi\n")?;
+        Ok(())
+    }
+    fn over_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rdx\n")?;
+        self.out.write_all(b"    push     rdx\n")?;
+        self.out.write_all(b"    push     rdi\n")?;
+        self.out.write_all(b"    push     rdx\n")?;
+        Ok(())
+    }
+
+    fn rot_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rdx\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    push     rdi\n")?;
+        self.out.write_all(b"    push     rsi\n")?;
+        self.out.write_all(b"    push     rdx\n")?;
+        Ok(())
+    }
+
+    fn swap_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rdx\n")?;
+        self.out.write_all(b"    push     rdi\n")?;
+        self.out.write_all(b"    push     rdx\n")?;
+        Ok(())
+    }
+
+    fn drop_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rdx\n")?;
+        Ok(())
+    }
+
+    fn max_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    cmp      rdi,rsi\n")?;
+        self.out.write_all(b"    mov      rax,rsi\n")?;
+        self.out.write_all(b"    cmovge   rax,rdi\n")?;
+        self.out.write_all(b"    push     rax\n")?;
+        Ok(())
+    }
+
+    fn memory_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    push     mem\n")?;
+        Ok(())
+    }
+    fn syscall1_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    syscall\n")?;
+        Ok(())
+    }
+    fn syscall2_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    syscall\n")?;
+        Ok(())
+    }
+    fn syscall3_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    pop      rdx\n")?;
+        self.out.write_all(b"    syscall\n")?;
+        Ok(())
+    }
+    fn syscall4_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    pop      rdx\n")?;
+        self.out.write_all(b"    pop      r10\n")?;
+        self.out.write_all(b"    syscall\n")?;
+        Ok(())
+    }
+    fn syscall5_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    pop      rdx\n")?;
+        self.out.write_all(b"    pop      r10\n")?;
+        self.out.write_all(b"    pop      r8\n")?;
+        self.out.write_all(b"    syscall\n")?;
+        Ok(())
+    }
+    fn syscall6_keyword(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    pop      rdx\n")?;
+        self.out.write_all(b"    pop      r10\n")?;
+        self.out.write_all(b"    pop      r8\n")?;
+        self.out.write_all(b"    pop      r9\n")?;
+        self.out.write_all(b"    syscall\n")?;
         Ok(())
     }
 
@@ -937,186 +1225,58 @@ impl FasmCompiler {
         token: &Token,
     ) -> std::io::Result<()> {
         match kw {
-            KeyWord::Use => {
-                if let Some(Token {
-                    kind: Kind::Id(name),
-                    ..
-                }) = stream.next()
-                {
-                    // Tokenizes file and adds tokens to stream.
-                    // Adds Words to global Word list.
-                    let filename = format!("{}.snack", name);
-                    let (mut import_tokens, errs) = scanner(&filename);
-                    if !errs.is_empty() {
-                        self.errors.extend_from_slice(&errs);
-                        return Ok(());
-                    }
-
-                    let mut words: HashMap<String, Vec<Token>> = HashMap::new();
-                    if !build_global(&mut import_tokens, &mut words) {
-                        self.errors.push(
-                            "Multiple-Main-Error: Libraries can not have main word declaration."
-                                .into(),
-                        );
-                    }
-                    self.kind(&import_tokens)?;
-                    for (_, tokens) in words.iter() {
-                        self.kind(tokens)?;
-                    }
-                } else {
-                    self.errors
-                        .push(format!("{} Error: Use requires path", token.span,));
-                }
-            }
-            KeyWord::Word => {
-                self.word(stream, token)?;
-            }
+            KeyWord::Use => self.import_file(stream, token)?,
+            KeyWord::Word => self.word(stream, token)?,
             KeyWord::In => {}
-            KeyWord::While => {
-                self.out.write_all(token.span.start.addr().as_bytes())?;
-            }
-            KeyWord::Do => {
-                self.out.write_all(b"    pop      rbx\n")?;
-                self.out.write_all(b"    test     rbx,rbx\n")?;
-                if let Some(e) = token.end {
-                    self.out.write_all(
-                        format!("    jz      {}{}\n", token.span.start.jump(), e).as_bytes(),
-                    )?;
-                } else {
-                    self.errors.push(format!(
-                            "{} Error: Do block missing `end` closing block. This could be a compiler bug.",
-                            token.span,
-                    ));
-                }
-            }
-            KeyWord::If => {
-                self.out.write_all(b"    pop      rbx\n")?;
-                self.out.write_all(b"    test     rbx,rbx\n")?;
-                if let Some(j) = token.jump {
-                    self.out.write_all(
-                        format!("    jz     {}{}\n", token.span.start.jump(), j).as_bytes(),
-                    )?;
-                }
-            }
-            KeyWord::ElIf => {
-                self.out.write_all(token.span.start.addr().as_bytes())?;
-                self.out.write_all(b"    pop     rbx\n")?;
-                self.out.write_all(b"    test    rbx,rbx\n")?;
-                if let Some(j) = token.jump {
-                    self.out.write_all(
-                        format!("    jz       {}{}\n", token.span.start.jump(), j).as_bytes(),
-                    )?;
-                } else if let Some(e) = token.end {
-                    self.out.write_all(
-                        format!("    jz       {}{}\n", token.span.start.jump(), e).as_bytes(),
-                    )?;
-                } else {
-                    self.errors.push(format!(
-                        "{} Error: elif statement missing `end` closing block.",
-                        token.span,
-                    ));
-                }
-            }
-            KeyWord::Else => {
-                if let Some(e) = token.end {
-                    self.out.write_all(
-                        format!("    jmp      {}{}\n", token.span.start.jump(), e).as_bytes(),
-                    )?;
-                } else {
-                    self.errors.push(format!(
-                        "{} Error: Else statement missing `end` closing block.",
-                        token.span,
-                    ));
-                }
-                self.out.write_all(token.span.start.addr().as_bytes())?;
-            }
-            KeyWord::End => {
-                if let (Some(j), false) = (token.jump, token.ret) {
-                    self.out.write_all(
-                        format!("    jmp      {}{}\n", token.span.start.jump(), j).as_bytes(),
-                    )?;
-                } else if let Some(_e) = token.end {
-                    self.out.write_all(token.span.start.addr().as_bytes())?;
-                }
-                self.out.write_all(token.span.start.addr().as_bytes())?;
-                if token.ret {
-                    self.out.write_all(b"    pop      rbp\n")?;
-                    self.out.write_all(b"    ret\n")?;
-                }
-            }
-            KeyWord::Dot => {
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    call     print\n")?;
-            }
-            KeyWord::Copy => {
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    push     rdi\n")?;
-                self.out.write_all(b"    push     rdi\n")?;
-            }
-            KeyWord::Over => {
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rdx\n")?;
-                self.out.write_all(b"    push     rdx\n")?;
-                self.out.write_all(b"    push     rdi\n")?;
-                self.out.write_all(b"    push     rdx\n")?;
-            }
-            KeyWord::Rot => {
-                self.out.write_all(b"    pop      rdi\n")?; // 1
-                self.out.write_all(b"    pop      rdx\n")?; // 2
-                self.out.write_all(b"    pop      rsi\n")?; // 3
-                self.out.write_all(b"    push     rdi\n")?; // 1
-                self.out.write_all(b"    push     rsi\n")?; // 3
-                self.out.write_all(b"    push     rdx\n")?; // 2
-            }
-            KeyWord::Swap => {
-                self.out.write_all(b"    pop      rdi\n")?; // 1
-                self.out.write_all(b"    pop      rdx\n")?; // 2
-                self.out.write_all(b"    push     rdi\n")?; // 2
-                self.out.write_all(b"    push     rdx\n")?; // 1
-            }
-            KeyWord::Drop => {
-                self.out.write_all(b"    pop      rdx\n")?;
-            }
-            KeyWord::Max => {
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rsi\n")?;
-                self.out.write_all(b"    cmp      rdi,rsi\n")?;
-                self.out.write_all(b"    mov      rax,rsi\n")?;
-                self.out.write_all(b"    cmovge   rax,rdi\n")?;
-                self.out.write_all(b"    push     rax\n")?;
-            }
-            KeyWord::Memory => {
-                self.out.write_all(b"    push     mem\n")?;
-            }
-            KeyWord::SysCall1 => self.errors.push(format!(
-                "{} ERROR: {} is not yet implemented yet.",
-                token.span, kw
-            )),
-            KeyWord::SysCall2 => self.errors.push(format!(
-                "{} ERROR: {} is not yet implemented yet.",
-                token.span, kw
-            )),
-            KeyWord::SysCall3 => {
-                self.out.write_all(b"    pop      rax\n")?;
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rsi\n")?;
-                self.out.write_all(b"    pop      rdx\n")?;
-                self.out.write_all(b"    syscall\n")?;
-            }
-            KeyWord::SysCall4 => self.errors.push(format!(
-                "{} ERROR: {} is not yet implemented yet.",
-                token.span, kw
-            )),
-            KeyWord::SysCall5 => self.errors.push(format!(
-                "{} ERROR: {} is not yet implemented yet.",
-                token.span, kw
-            )),
-            KeyWord::SysCall6 => self.errors.push(format!(
-                "{} ERROR: {} is not yet implemented yet.",
-                token.span, kw
-            )),
+            KeyWord::While => self.fasm_label(&token.addr())?,
+            KeyWord::Do => self.do_keyword(token)?,
+            KeyWord::If => self.if_keyword(token)?,
+            KeyWord::ElIf => self.elif_keyword(token)?,
+            KeyWord::Else => self.else_keyword(token)?,
+            KeyWord::End => self.end_keyword(token)?,
+            KeyWord::Return => self.return_keyword(token)?,
+            KeyWord::Dot => self.dot_keyword()?,
+            KeyWord::Copy => self.copy_keyword()?,
+            KeyWord::Over => self.over_keyword()?,
+            KeyWord::Rot => self.rot_keyword()?,
+            KeyWord::Swap => self.swap_keyword()?,
+            KeyWord::Drop => self.drop_keyword()?,
+            KeyWord::Max => self.max_keyword()?,
+            KeyWord::Memory => self.memory_keyword()?,
+            KeyWord::SysCall1 => self.syscall1_keyword()?,
+            KeyWord::SysCall2 => self.syscall2_keyword()?,
+            KeyWord::SysCall3 => self.syscall3_keyword()?,
+            KeyWord::SysCall4 => self.syscall4_keyword()?,
+            KeyWord::SysCall5 => self.syscall5_keyword()?,
+            KeyWord::SysCall6 => self.syscall6_keyword()?,
             _ => unreachable!(),
         }
+        Ok(())
+    }
+
+    fn number_prim(&mut self, value: &str) -> std::io::Result<()> {
+        self.fasm_push(value)?;
+        Ok(())
+    }
+
+    fn string_prim(&mut self, token: &Token, string: &str) -> std::io::Result<()> {
+        self.data.push((
+            remove_file_extension(&token.span.start.filename),
+            token.span.start.idx,
+            string.to_string(),
+        ));
+        self.out
+            .write_all(format!("    push     {}\n", string.len()).as_bytes())?;
+        self.out.write_all(
+            format!(
+                "    push     data{}{}\n",
+                remove_file_extension(&token.span.start.filename)
+                    .replace("-", "")
+                    .replace("/", ""),
+                token.span.start.idx
+            )
+            .as_bytes(),
+        )?;
         Ok(())
     }
 
@@ -1127,130 +1287,150 @@ impl FasmCompiler {
         token: &Token,
     ) -> std::io::Result<()> {
         match prim {
-            Prim::Int(v) | Prim::Hex(v) => {
-                self.out
-                    .write_all(format!("    push     {}\n", v).as_bytes())?;
-            }
-            Prim::String(string) => {
-                self.data.push((
-                    remove_file_extension(&token.span.start.filename),
-                    token.span.start.idx,
-                    string.to_string(),
-                ));
-                self.out
-                    .write_all(format!("    push     {}\n", string.len()).as_bytes())?;
-                self.out.write_all(
-                    format!(
-                        "    push     data{}{}\n",
-                        remove_file_extension(&token.span.start.filename)
-                            .replace("-", "")
-                            .replace("/", ""),
-                        token.span.start.idx
-                    )
-                    .as_bytes(),
-                )?;
-            }
+            Prim::Int(v) | Prim::Hex(v) => self.number_prim(v)?,
+            Prim::String(string) => self.string_prim(token, string)?,
         }
+        Ok(())
+    }
+
+    fn store_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop     rbx\n")?;
+        self.out.write_all(b"    pop     rax\n")?;
+        self.out.write_all(b"    mov     [rax],bl\n")?;
+        Ok(())
+    }
+
+    fn load_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop     rax\n")?;
+        self.out.write_all(b"    xor     rbx,rbx\n")?;
+        self.out.write_all(b"    mov     bl,[rax]\n")?;
+        self.out.write_all(b"    push    rbx\n")?;
+        self.out.write_all(b"    push    mem\n")?;
+        Ok(())
+    }
+
+    fn add_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rdx\n")?;
+        self.out.write_all(b"    add      rdx,rdi\n")?;
+        self.out.write_all(b"    push     rdx\n")?;
+        Ok(())
+    }
+
+    fn minus_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rdx\n")?;
+        self.out.write_all(b"    sub      rdx,rdi\n")?;
+        self.out.write_all(b"    push     rdx\n")?;
+        Ok(())
+    }
+
+    fn mul_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop     rax\n")?;
+        self.out.write_all(b"    pop     rbx\n")?;
+        self.out.write_all(b"    mul     rbx\n")?;
+        self.out.write_all(b"    push    rax\n")?;
+        Ok(())
+    }
+
+    fn div_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    pop      rbx\n")?;
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    div      rbx\n")?;
+        self.out.write_all(b"    push     rax\n")?;
+        Ok(())
+    }
+
+    fn mod_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    xor      rdx, rdx\n")?;
+        self.out.write_all(b"    pop      rbx\n")?;
+        self.out.write_all(b"    pop      rax\n")?;
+        self.out.write_all(b"    div      rbx\n")?;
+        self.out.write_all(b"    push     rdx\n")?;
+        Ok(())
+    }
+
+    fn grt_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    mov      rbx,0\n")?;
+        self.out.write_all(b"    mov      rdx,1\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    cmp      rsi,rdi\n")?;
+        self.out.write_all(b"    cmovg    rbx,rdx\n")?;
+        self.out.write_all(b"    push     rbx\n")?;
+        Ok(())
+    }
+
+    fn geq_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    mov      rbx,0\n")?;
+        self.out.write_all(b"    mov      rdx,1\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    cmp      rsi,rdi\n")?;
+        self.out.write_all(b"    cmovge   rbx,rdx\n")?;
+        self.out.write_all(b"    push     rbx\n")?;
+        Ok(())
+    }
+
+    fn les_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    mov      rbx,0\n")?;
+        self.out.write_all(b"    mov      rdx,1\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    cmp      rsi,rdi\n")?;
+        self.out.write_all(b"    cmovl    rbx,rdx\n")?;
+        self.out.write_all(b"    push     rbx\n")?;
+        Ok(())
+    }
+
+    fn leq_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    mov      rbx,0\n")?;
+        self.out.write_all(b"    mov      rdx,1\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    cmp      rsi,rdi\n")?;
+        self.out.write_all(b"    cmovle   rbx,rdx\n")?;
+        self.out.write_all(b"    push     rbx\n")?;
+        Ok(())
+    }
+
+    fn neq_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    mov      rbx,0\n")?;
+        self.out.write_all(b"    mov      rdx,1\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    cmp      rsi,rdi\n")?;
+        self.out.write_all(b"    cmovne   rbx,rdx\n")?;
+        self.out.write_all(b"    push     rbx\n")?;
+        Ok(())
+    }
+
+    fn eq_op(&mut self) -> std::io::Result<()> {
+        self.out.write_all(b"    mov      rbx,0\n")?;
+        self.out.write_all(b"    mov      rdx,1\n")?;
+        self.out.write_all(b"    pop      rdi\n")?;
+        self.out.write_all(b"    pop      rsi\n")?;
+        self.out.write_all(b"    cmp      rsi,rdi\n")?;
+        self.out.write_all(b"    cmove    rbx,rdx\n")?;
+        self.out.write_all(b"    push     rbx\n")?;
         Ok(())
     }
 
     fn operators(&mut self, _stream: &mut Stream<Token>, op: &Oper) -> std::io::Result<()> {
         match op {
-            Oper::Store => {
-                self.out.write_all(b"    pop     rbx\n")?;
-                self.out.write_all(b"    pop     rax\n")?;
-                self.out.write_all(b"    mov     [rax],bl\n")?;
-            }
-            Oper::Load => {
-                self.out.write_all(b"    pop     rax\n")?;
-                self.out.write_all(b"    xor     rbx,rbx\n")?;
-                self.out.write_all(b"    mov     bl,[rax]\n")?;
-            }
-            Oper::Plus => {
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rdx\n")?;
-                self.out.write_all(b"    add      rdx,rdi\n")?;
-                self.out.write_all(b"    push     rdx\n")?;
-            }
-            Oper::Minus => {
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rdx\n")?;
-                self.out.write_all(b"    sub      rdx,rdi\n")?;
-                self.out.write_all(b"    push     rdx\n")?;
-            }
-            Oper::Mul => {
-                self.out.write_all(b"    pop     rax\n")?;
-                self.out.write_all(b"    pop     rbx\n")?;
-                self.out.write_all(b"    mul     rbx\n")?;
-                self.out.write_all(b"    push    rax\n")?;
-            }
-            Oper::Div => {
-                self.out.write_all(b"    pop      rbx\n")?;
-                self.out.write_all(b"    pop      rax\n")?;
-                self.out.write_all(b"    div      rbx\n")?;
-                self.out.write_all(b"    push     rax\n")?;
-            }
-            Oper::Mod => {
-                self.out.write_all(b"    xor      rdx, rdx\n")?;
-                self.out.write_all(b"    pop      rbx\n")?;
-                self.out.write_all(b"    pop      rax\n")?;
-                self.out.write_all(b"    div      rbx\n")?;
-                self.out.write_all(b"    push     rdx\n")?;
-            }
-            Oper::Grt => {
-                self.out.write_all(b"    mov      rbx,0\n")?;
-                self.out.write_all(b"    mov      rdx,1\n")?;
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rsi\n")?;
-                self.out.write_all(b"    cmp      rsi,rdi\n")?;
-                self.out.write_all(b"    cmovg    rbx,rdx\n")?;
-                self.out.write_all(b"    push     rbx\n")?;
-            }
-            Oper::Geq => {
-                self.out.write_all(b"    mov      rbx,0\n")?;
-                self.out.write_all(b"    mov      rdx,1\n")?;
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rsi\n")?;
-                self.out.write_all(b"    cmp      rsi,rdi\n")?;
-                self.out.write_all(b"    cmovge   rbx,rdx\n")?;
-                self.out.write_all(b"    push     rbx\n")?;
-            }
-            Oper::Les => {
-                self.out.write_all(b"    mov      rbx,0\n")?;
-                self.out.write_all(b"    mov      rdx,1\n")?;
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rsi\n")?;
-                self.out.write_all(b"    cmp      rsi,rdi\n")?;
-                self.out.write_all(b"    cmovl    rbx,rdx\n")?;
-                self.out.write_all(b"    push     rbx\n")?;
-            }
-            Oper::Leq => {
-                self.out.write_all(b"    mov      rbx,0\n")?;
-                self.out.write_all(b"    mov      rdx,1\n")?;
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rsi\n")?;
-                self.out.write_all(b"    cmp      rsi,rdi\n")?;
-                self.out.write_all(b"    cmovle   rbx,rdx\n")?;
-                self.out.write_all(b"    push     rbx\n")?;
-            }
-            Oper::Neq => {
-                self.out.write_all(b"    mov      rbx,0\n")?;
-                self.out.write_all(b"    mov      rdx,1\n")?;
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rsi\n")?;
-                self.out.write_all(b"    cmp      rsi,rdi\n")?;
-                self.out.write_all(b"    cmovne   rbx,rdx\n")?;
-                self.out.write_all(b"    push     rbx\n")?;
-            }
-            Oper::Eq => {
-                self.out.write_all(b"    mov      rbx,0\n")?;
-                self.out.write_all(b"    mov      rdx,1\n")?;
-                self.out.write_all(b"    pop      rdi\n")?;
-                self.out.write_all(b"    pop      rsi\n")?;
-                self.out.write_all(b"    cmp      rsi,rdi\n")?;
-                self.out.write_all(b"    cmove    rbx,rdx\n")?;
-                self.out.write_all(b"    push     rbx\n")?;
-            }
+            Oper::Store => self.store_op()?,
+            Oper::Load => self.load_op()?,
+            Oper::Plus => self.add_op()?,
+            Oper::Minus => self.minus_op()?,
+            Oper::Mul => self.mul_op()?,
+            Oper::Div => self.div_op()?,
+            Oper::Mod => self.mod_op()?,
+            Oper::Grt => self.grt_op()?,
+            Oper::Geq => self.geq_op()?,
+            Oper::Les => self.les_op()?,
+            Oper::Leq => self.leq_op()?,
+            Oper::Neq => self.neq_op()?,
+            Oper::Eq => self.eq_op()?,
         }
         Ok(())
     }
@@ -1577,7 +1757,6 @@ fn main() -> std::io::Result<()> {
             let program_name = remove_file_extension(&filename);
             std::process::Command::new(&format!("./{}", program_name))
                 .status()
-                // .spawn()
                 .expect(&format!("Failed to run [{}].", program_name));
         }
     } else {
