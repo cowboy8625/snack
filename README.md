@@ -3,11 +3,9 @@
 The language that eats the stack.  Heavily inspired by [porth](https://gitlab.com/tsoding/porth/)
 which is inspired off of [forth](https://en.wikipedia.org/wiki/Forth_(programming_language))
 
-The source code of this compiler is really really really sloppy and I know it.  This was just a project to get the
-language working and not a project to worry about design of the compiler.   I plan on throwing the compiler out
-in rust any way. Having the language self hosted is the ultimate goal without the use of
-[fasm](https://flatassembler.net/download.php).  The knolage I get from this project I will put in use for another
-language project I am working on.
+Having the language self hosted is the ultimate goal without the use of
+[fasm](https://flatassembler.net/download.php). The knowledge I get from
+this project I will put in use for another language project I am working on.
 
 
 # Install
@@ -49,24 +47,28 @@ and you all set.
 
 **Hello World**
 ```
-"Hello World!\n" 1 1 syscall3
+use std
+
+word main in
+  "Hello World!\n" syscall3
+end
 ```
 **Looping and Conditions**
 ```
 0 while copy 10 <= do
-copy 0 == if
-100 .
-copy 1 == elif
-200 .
-copy 2 == elif
-300 .
-copy 3 == elif
-400 .
-else
-copy .
-end
-1 +
-end
+  copy 0 == if
+    100 .
+  copy 1 == elif
+    200 .
+  copy 2 == elif
+    300 .
+  copy 3 == elif
+    400 .
+  else
+    copy .
+  end
+  1 +
+end drop
 ```
 
 ## Stack Commands
@@ -112,6 +114,14 @@ memory|Push's memory address on stack
 name|arg1|arg2|arg3
 ----|----|----|----
 syscall3|message size|message location|File Descriptor
+
+## Keywords
+name|usage
+:---|:---
+`use`|import lib snack file
+`word`|use to declare a "function"
+
+
 
 
 

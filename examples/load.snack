@@ -1,0 +1,12 @@
+use std
+
+const MyListLoc 0 end
+const MyListSize 10 end
+
+word ArrayPush item ptr in
+    memory swap + swap !
+end
+
+word main in
+     "L" @ drop .
+end

@@ -1,0 +1,8 @@
+// >= 48 <= 57
+word is_digit num in // -> bool
+    num 48 >= and num 57 <= return
+end
+
+word main in
+    50 is_digit swap drop
+end

@@ -1,0 +1,7 @@
+word add x y in
+    x y + return
+end
+
+word main in
+    123 321 add .
+end

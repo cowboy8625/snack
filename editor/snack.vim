@@ -8,9 +8,9 @@ if exists("b:current_syntax")
 endif
 
 syn keyword snackKeyword if elif else do true false let copy swap drop over rot
-syn keyword snackKeyword while end or not and memory const word in use
+syn keyword snackKeyword while end or not and memory const word in use return
 
-syn keyword snackFunction println print max
+syn keyword snackFunction max
 syn keyword snackFunction syscall1 syscall2 syscall3 syscall4 syscall5 syscall6
 
 hi link snackKeyword Keyword
