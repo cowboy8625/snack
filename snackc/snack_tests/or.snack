@@ -1,0 +1,9 @@
+word one_of ch: char -> bool in
+  ch 'A' == ch 'a' == or return
+end
+
+word main -> null in
+  'a' one_of .
+  'A' one_of .
+  '1' one_of .
+end

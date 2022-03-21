@@ -1,0 +1,9 @@
+// >= 48 <= 57
+word is_digit c: char -> bool in
+  c 48 >= c 57 <= and return
+end
+
+word main -> null in
+  '0' is_digit .
+  'A' is_digit .
+end
