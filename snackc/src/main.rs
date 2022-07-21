@@ -687,6 +687,18 @@ pub enum TypeOf {
     Null,
 }
 
+impl fmt::Display for TypeOf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::U64 => write!(f, "u64"),
+            Self::Char => write!(f, "char"),
+            Self::Str => write!(f, "str"),
+            Self::Bool => write!(f, "bool"),
+            Self::Null => write!(f, "null"),
+        }
+    }
+}
+
 impl TypeOf {
     fn lookup(name: &str) -> Option<Self> {
         use TypeOf::*;
@@ -705,109 +717,306 @@ impl TypeOf {
 // return Type of word or all branches Types do not match in a if statment
 // TypeChecker:
 //  1. return type of if statments match up with word return type
-//  2. stack has enough items on it to do ops
-//  3. definition of variable or word is defined
-// pub struct TypeChecker<'a> {
-//     global_defs: &'a mut Vec<Token>,
-//     word_defs: &'a mut Vec<(String, Vec<Token>)>,
-//     main_def: &'a mut Vec<Token>,
-//     global: &'a HashMap<String, Value>,
-//     tp: usize,
-//     stack: Vec<TypeOf>,
-//     errors: Vec<String>,
-// }
-//
-// impl<'a> TypeChecker<'a> {
-//     fn new(
-//         global_defs: &'a mut Vec<Token>,
-//         word_defs: &'a mut Vec<(String, Vec<Token>)>,
-//         main_def: &'a mut Vec<Token>,
-//         global: &'a HashMap<String, Value>,
-//     ) -> Self {
-//         Self {
-//             global_defs,
-//             word_defs,
-//             main_def,
-//             global,
-//             tp: 0,
-//             stack: Vec::new(),
-//             errors: Vec::new(),
-//         }
-//     }
-//
-//     // Checks all return types of Word Defs match
-//     fn check_word_defs(&mut self) {
-//         for (_name, tokens) in self.word_defs.iter_mut() {
-//             while self.tp < tokens.len() {
-//                 match &tokens[self.tp].kind {
-//                     _ => self.advance(),
-//                 }
-//             }
-//         }
-//     }
-//
-//     // Checks all return types of if branches match
-//     fn check_if_block(&mut self) {}
-//
-//     // fn peek(&self) -> Option<&Token> {
-//     //     self.tokens.get(self.tp + 1)
-//     // }
-//
-//     fn advance(&mut self) {
-//         self.tp += 1;
-//     }
-//
-//     fn check(mut self) -> Self {
-//         // while self.tp < self.tokens.len() {
-//         //     match &self.tokens[self.tp].kind {
-//         //         Kind::Id(_) => self.advance(),
-//         //         Kind::Prim(_) => self.advance(),
-//         //         Kind::Oper(_) => self.advance(),
-//         //         Kind::KeyWord(keyword) => match keyword {
-//         //             KeyWord::Use => {}
-//         //             KeyWord::Word => {}
-//         //             KeyWord::In => {}
-//         //             KeyWord::Const => {}
-//         //             KeyWord::While => {}
-//         //             KeyWord::Do => {}
-//         //             KeyWord::If => {}
-//         //             KeyWord::ElIf => {}
-//         //             KeyWord::Else => {}
-//         //             KeyWord::End => {}
-//         //             KeyWord::Return => {}
-//         //             KeyWord::And => {}
-//         //             KeyWord::Or => {}
-//         //             KeyWord::True => {}
-//         //             KeyWord::False => {}
-//         //             KeyWord::Dot => {}
-//         //             KeyWord::Copy => {}
-//         //             KeyWord::Over => {}
-//         //             KeyWord::Rot => {}
-//         //             KeyWord::Swap => {}
-//         //             KeyWord::Drop => {}
-//         //             KeyWord::Max => {}
-//         //             KeyWord::Memory => {}
-//         //             KeyWord::SysCall1 => {}
-//         //             KeyWord::SysCall2 => {}
-//         //             KeyWord::SysCall3 => {}
-//         //             KeyWord::SysCall4 => {}
-//         //             KeyWord::SysCall5 => {}
-//         //             KeyWord::SysCall6 => {}
-//         //         },
-//         //     }
-//         // }
-//         self
-//     }
-//
-//     fn report(&self) {
-//         for error in self.errors.iter() {
-//             eprintln!("{}", error);
-//         }
-//         if !self.errors.is_empty() {
-//             std::process::exit(2);
-//         }
-//     }
-// }
+//  2. all if statements branches match on type?
+//  3. stack has enough items on it to do ops
+//  4. definition of variable or word is defined
+#[allow(unused)]
+pub struct TypeChecker<'a> {
+    global_defs: &'a Vec<Token>,
+    word_defs: &'a Vec<Word>,
+    local: Vec<String>,
+    local_types: Vec<TypeOf>,
+    main_def: &'a Word,
+    global: &'a HashMap<String, Value>,
+    stack: Vec<Vec<TypeOf>>,
+    frame: usize,
+    errors: Vec<String>,
+}
+
+impl<'a> TypeChecker<'a> {
+    fn new(
+        global_defs: &'a Vec<Token>,
+        word_defs: &'a Vec<Word>,
+        main_def: &'a Word,
+        global: &'a HashMap<String, Value>,
+    ) -> Self {
+        Self {
+            global_defs,
+            word_defs,
+            local: Vec::new(),
+            local_types: Vec::new(),
+            main_def,
+            global,
+            stack: vec![Vec::new()],
+            frame: 0,
+            errors: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, t: TypeOf) {
+        if self.frame >= self.stack.len() {
+            self.stack.push(vec![t]);
+        } else {
+            self.stack[self.frame].push(t);
+        }
+    }
+
+    fn pop(&mut self) -> Option<TypeOf> {
+        self.stack.get_mut(self.frame).map(|s| s.pop()).flatten()
+    }
+
+    fn len(&self) -> usize {
+        self.stack[self.frame].len()
+    }
+
+    fn last(&self) -> Option<TypeOf> {
+        self.stack
+            .get(self.frame)
+            .map(|s| s.last())
+            .flatten()
+            .cloned()
+    }
+
+    fn clear(&mut self) {
+        let _ = self.stack.pop();
+    }
+
+    fn is_empty(&mut self) -> bool {
+        self.stack[self.frame].is_empty()
+    }
+
+    // Checks all return types of Word Defs match
+    fn check_word_defs(&mut self, span: Option<&Span>, word: &Word) {
+        self.local = word.prams();
+        if self.len() < self.local.len() {
+            self.errors.push(format!(
+                "{}: Error: Not enough items on stack to call <{}> expected {} but found {}.",
+                span.unwrap_or(&word.span()),
+                word.name(),
+                self.local.len(),
+                self.len(),
+            ));
+        } else {
+            for _ in 0..self.local.len() {
+                let _ = self.pop();
+            }
+        }
+        self.local_types = word.prams_types();
+        let return_type = word.return_type;
+        self.frame += 1;
+        for tok in word.body().iter() {
+            self.execute_instruction(&tok.span, &return_type, &tok.kind);
+        }
+        if !self.is_empty() {
+            self.errors.push(format!(
+                "Error: UnhandledData for word <{}>\n{:?}",
+                word.name(),
+                self.stack[self.frame]
+            ));
+        }
+        self.frame -= 1;
+        self.clear();
+        self.local.clear();
+        self.local_types.clear();
+    }
+
+    fn execute_instruction(&mut self, span: &Span, return_type: &TypeOf, kind: &Kind) {
+        match kind {
+            Kind::Id(name) => self.id_type(span, name),
+            Kind::KeyWord(KeyWord::If) => self.check_if_block(span),
+            Kind::KeyWord(KeyWord::Dot) => self.dbg_int(span),
+            Kind::KeyWord(KeyWord::Drop) => {
+                let _ = self.pop();
+            }
+            Kind::KeyWord(KeyWord::Memory) => self.push(TypeOf::U64),
+            Kind::KeyWord(
+                syscall @ (KeyWord::SysCall1
+                | KeyWord::SysCall2
+                | KeyWord::SysCall3
+                | KeyWord::SysCall4
+                | KeyWord::SysCall5
+                | KeyWord::SysCall6),
+            ) => self.syscall(span, syscall),
+            Kind::KeyWord(KeyWord::Return) => self.return_type(span, return_type),
+            Kind::KeyWord(KeyWord::True | KeyWord::False) => self.push(TypeOf::Bool),
+            Kind::KeyWord(oper @ (KeyWord::And | KeyWord::Or)) => {
+                self.compare(span, oper.to_string().as_str())
+            }
+            Kind::Oper(oper @ (Oper::Plus | Oper::Minus | Oper::Mul | Oper::Div | Oper::Mod)) => {
+                self.binary(span, &oper)
+            }
+            Kind::Oper(
+                oper @ (Oper::Grt | Oper::Les | Oper::Neq | Oper::Leq | Oper::Geq | Oper::Eq),
+            ) => self.compare(span, oper.to_string().as_str()),
+            Kind::Prim(Prim::Hex(_) | Prim::Int(_)) => self.push(TypeOf::U64),
+            Kind::Prim(Prim::Char(_)) => self.push(TypeOf::Char),
+            Kind::Prim(Prim::String(_)) => {
+                // self.stack.push(TypeOf::Str);
+                self.push(TypeOf::U64);
+                self.push(TypeOf::U64);
+            }
+            _ => {}
+        }
+    }
+
+    fn syscall(&mut self, span: &Span, syscall_type: &KeyWord) {
+        let count = match syscall_type {
+            KeyWord::SysCall1 => 1,
+            KeyWord::SysCall2 => 2,
+            KeyWord::SysCall3 => 3,
+            KeyWord::SysCall4 => 4,
+            KeyWord::SysCall5 => 5,
+            KeyWord::SysCall6 => 6,
+            _ => unreachable!(),
+        };
+        if self.len() < count {
+            self.errors.push(format!(
+                "{}: Error: Not enough items on stack for syscall{} expected {} but found {}.",
+                span,
+                count,
+                count,
+                self.len(),
+            ));
+        }
+        for _ in 0..count {
+            let _ = self.pop();
+        }
+    }
+
+    fn id_type(&mut self, span: &Span, name: &str) {
+        if let Some(global) = self.global.get(name) {
+            match global {
+                Value::Const(_) => {
+                    self.push(TypeOf::U64);
+                    return;
+                }
+                Value::Word(word) => {
+                    self.check_word_defs(Some(span), word);
+                    return;
+                }
+            }
+        }
+        if let Some(idx) = self
+            .local
+            .iter()
+            .enumerate()
+            .find(|(_, i)| i.as_str() == name)
+            .map(|(i, _)| i)
+        {
+            self.push(self.local_types[idx]);
+        }
+    }
+
+    fn binary(&mut self, span: &Span, oper: &Oper) {
+        if self.stack.len() < 2 {
+            self.errors.push(format!(
+                "{}: Error: not enough items on stack for a binary {}",
+                span, oper
+            ));
+            return;
+        }
+        if let (Some(rhs), Some(lhs)) = (self.pop(), self.pop()) {
+            if rhs == lhs {
+                self.push(rhs);
+            } else {
+                self.errors.push(format!(
+                    "{}: Error: can not {} <{}> with a <{}>",
+                    span, oper, rhs, lhs
+                ));
+            }
+        }
+    }
+
+    fn compare(&mut self, span: &Span, oper: &str) {
+        if self.stack.len() < 2 {
+            self.errors.push(format!(
+                "{}: Error: not enough items on stack to compare {}\nNeeds two but found {}",
+                span,
+                oper,
+                self.stack.len()
+            ));
+            return;
+        }
+        if let (Some(rhs), Some(lhs)) = (self.pop(), self.pop()) {
+            if rhs == lhs {
+                self.push(TypeOf::Bool);
+            } else {
+                self.errors.push(format!(
+                    "{}: Error: can not {} <{}> with a <{}>",
+                    span, oper, rhs, lhs
+                ));
+            }
+        }
+    }
+
+    fn dbg_int(&mut self, span: &Span) {
+        if self.stack.len() < 1 {
+            self.errors.push(format!(
+                "{}: Error: not enough items on stack to dbg print\nNeeds at lest one but found {}",
+                span,
+                self.stack.len()
+            ));
+            return;
+        }
+        if let Some(item) = self.pop() {
+            if item == TypeOf::U64 {
+                return;
+            } else {
+                self.errors.push(format!(
+                        "{}: Error: Expected <u64> but found <{}> \nNote: Debug Int aka the . can only display <u64>",
+                        span,
+                        item
+                ));
+            }
+        }
+    }
+
+    fn return_type(&mut self, span: &Span, return_type: &TypeOf) {
+        if let Some(stack_type) = self.last() {
+            if &stack_type != return_type {
+                self.errors.push(format!(
+                    "{}: Error: return types do not match expected <{:?}> got <{:?}>",
+                    span, return_type, stack_type
+                ));
+            } else {
+                let _ = self.pop();
+            }
+        } else {
+            self.errors
+                .push(format!("{}: Error: nothing to return on stack", span));
+        }
+    }
+
+    // Checks all return types of if branches match
+    fn check_if_block(&mut self, _span: &Span) {}
+
+    fn check(mut self) -> Self {
+        self.check_word_defs(None, self.main_def);
+        // for word in self.word_defs.iter() {
+        //     if !self.errors.is_empty() {
+        //         break;
+        //     }
+        //     self.check_word_defs(word);
+        // }
+        if !self.is_empty() {
+            self.errors.push(format!(
+                "Error: unhandled data on stack {}\n{:?}",
+                self.len(),
+                self.stack[self.frame]
+            ));
+        }
+        self
+    }
+
+    fn report(&self) {
+        for error in self.errors.iter() {
+            eprintln!("{}", error);
+        }
+        if !self.errors.is_empty() {
+            std::process::exit(2);
+        }
+    }
+}
 
 struct FasmCompiler {
     out: std::fs::File,
@@ -998,32 +1207,33 @@ impl FasmCompiler {
     fn compiler(mut self) -> std::io::Result<Self> {
         self.fasm_header(FasmCompiler::ENTRY_POINT)?;
         self.fasm_print()?;
-        self.compile_globels()?;
+        self.compile_globals()?;
         self.compile_main()?;
         self.fasm_exit()?;
         self.fasm_footer()?;
         Ok(self)
     }
 
-    fn compile_globels(&mut self) -> std::io::Result<()> {
+    fn compile_globals(&mut self) -> std::io::Result<()> {
         self.kind(&self.global_defs.clone())?;
 
         let words = self.word_defs.clone();
         for word in words.iter() {
-            if let Some((prams, pram_len, id_list)) = self
+            if let Some((prams, pram_len, id_list, allocate)) = self
                 .global
                 .get(word.name())
                 .map(|v| v.get_word())
                 .flatten()
-                .map(|wd| (wd.prams(), wd.pram_len(), wd.id_list()))
+                .map(|wd| (wd.prams(), wd.pram_len(), wd.id_list(), wd.allocate()))
             {
                 self.fasm_label(word.name())?;
                 self.local = prams;
-                let arg_sub = id_list
+                let allocate = id_list
                     .iter()
                     .map(|name| self.global.contains_key(name))
-                    .fold(false, |acc, x| acc || x);
-                self.fasm_prologue(pram_len, arg_sub)?;
+                    .fold(false, |acc, x| acc || x)
+                    && allocate;
+                self.fasm_prologue(pram_len, allocate)?;
                 self.create_pass_fasm_arguments(pram_len)?;
             } else {
                 self.errors.push(format!(
@@ -1055,7 +1265,7 @@ impl FasmCompiler {
                 Kind::KeyWord(kw) => self.keyword(kw, &token)?,
                 Kind::Prim(prim) => self.primitives(&mut stream, prim, &token)?,
                 Kind::Oper(op) => self.operators(&mut stream, op)?,
-                _ => unreachable!(token),
+                _ => unreachable!("{}", token),
             }
         }
         Ok(())
@@ -1237,12 +1447,11 @@ impl FasmCompiler {
         Ok(())
     }
     fn over_keyword(&mut self) -> std::io::Result<()> {
-        self.out("    pop      rdi\n")?;
-        self.out("    pop      rdi\n")?;
-        self.out("    pop      rdx\n")?;
-        self.out("    push     rdx\n")?;
-        self.out("    push     rdi\n")?;
-        self.out("    push     rdx\n")?;
+        self.out("    pop      rbx\n")?;
+        self.out("    pop      rax\n")?;
+        self.out("    push     rax\n")?;
+        self.out("    push     rbx\n")?;
+        self.out("    push     rax\n")?;
         Ok(())
     }
 
@@ -1907,6 +2116,7 @@ fn create_globals(word_defs: &Vec<Word>) -> HashMap<String, Value> {
     global
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
 struct Word {
     name: String,
@@ -1938,8 +2148,13 @@ impl Word {
         let end = self.tokens.last().unwrap().span.end.clone();
         Span { start, end }
     }
+
     fn prams(&self) -> Vec<String> {
         self.prams.to_owned()
+    }
+
+    fn prams_types(&self) -> Vec<TypeOf> {
+        self.prams_types.to_owned()
     }
 
     fn name(&self) -> &str {
@@ -1950,9 +2165,6 @@ impl Word {
         self.prams.len()
     }
 
-    // fn as_tokens(&self) -> &[Token] {
-    //     &self.tokens
-    // }
     fn body(&self) -> &[Token] {
         // Body returns just tokings between the In and End.
         let end = self.tokens.len() - 1;
@@ -1977,12 +2189,20 @@ impl Word {
             .collect::<Vec<String>>()
     }
 
-    // TODO: rename to 'is_returning'?
     fn is_returning(&self) -> bool {
         match self.return_type {
             TypeOf::Null => false,
             _ => true,
         }
+    }
+
+    fn allocate(&self) -> bool {
+        for tok in self.tokens.iter() {
+            if matches!(tok.kind, Kind::Prim(_)) {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -2071,7 +2291,7 @@ impl From<(String, Vec<Token>)> for Word {
 
 impl From<(&str, Vec<Token>)> for Word {
     fn from((name, body): (&str, Vec<Token>)) -> Self {
-        Self::from((name, body))
+        Self::from((name.to_string(), body))
     }
 }
 
@@ -2185,7 +2405,7 @@ fn main() -> std::io::Result<()> {
         }
         std::process::exit(2);
     }
-    timer_end("Scanner", start);
+    timer_end("   Scanner    ", start);
 
     let start = timer_start();
     let (imports, mut global_defs, mut word_defs, main_def, mut global) = sort_tokens(tokens);
@@ -2194,28 +2414,27 @@ fn main() -> std::io::Result<()> {
         std::process::exit(1);
     }
     let main_def = main_def.unwrap();
-    timer_end("Sorting", start);
+    timer_end("   Sorting    ", start);
 
     let start = timer_start();
     import(imports, &mut global_defs, &mut word_defs, &mut global);
-    timer_end("Importing", start);
+    timer_end("  Importing   ", start);
 
-    // let start = timer_start();
-    // let type_checker =
-    //     TypeChecker::new(&mut global_defs, &mut word_defs, &mut main_def, &global).check();
-    // type_checker.report();
-    // timer_end("Type Checking", start);
+    let start = timer_start();
+    let type_checker = TypeChecker::new(&global_defs, &word_defs, &main_def, &global).check();
+    type_checker.report();
+    timer_end("Type Checking ", start);
 
     let start = timer_start();
     let compler =
         FasmCompiler::new(flags.clone(), global_defs, word_defs, main_def, global)?.compiler()?;
     compler.report();
-    timer_end("Compiler", start);
+    timer_end("   Compiler   ", start);
 
     let start = timer_start();
     fasm_assembler(&flags);
     timer_end("Fasm Assembler", start);
-    timer_end("Total", total);
+    timer_end("    Total     ", total);
 
     if flags.run {
         std::process::Command::new(&format!("./{}", flags.name()))

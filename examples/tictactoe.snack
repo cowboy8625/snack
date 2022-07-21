@@ -1,0 +1,53 @@
+use std
+
+const FileDiscripter 1 end
+const SYS_write 1 end
+
+// Array for Grid Chars
+const GridLoc 0 end
+const GridSize 9 end
+const Grid0 0 GridLoc + end
+const Grid1 1 GridLoc + end
+const Grid2 2 GridLoc + end
+const Grid3 3 GridLoc + end
+const Grid4 4 GridLoc + end
+const Grid5 5 GridLoc + end
+const Grid6 6 GridLoc + end
+const Grid7 7 GridLoc + end
+const Grid8 8 GridLoc + end
+
+word row -> null in
+  1 memory GridLoc + Grid0 + print
+end
+
+word lline -> null in
+  "---------\n" FileDiscripter SYS_write syscall3
+end
+
+word display -> null in
+  row lline
+end
+
+word insertArray loc: u64 idx: u64 c: char -> null in
+  memory loc + idx + c !
+end
+
+word getArray loc: u64 idx: u64 -> null in
+  memory loc + idx + @ return
+end
+
+word main -> null in
+  GridLoc Grid0 '1' insertArray
+  GridLoc Grid1 '2' insertArray
+  GridLoc Grid2 '3' insertArray
+  GridLoc Grid3 '4' insertArray
+  GridLoc Grid4 '5' insertArray
+  GridLoc Grid5 '6' insertArray
+  GridLoc Grid6 '7' insertArray
+  GridLoc Grid7 '8' insertArray
+  GridLoc Grid8 '9' insertArray
+
+  display
+
+end
+

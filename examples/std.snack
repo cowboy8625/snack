@@ -358,14 +358,14 @@ const SIGQUIT 3 end
 // size: of string
 // ptr: pointer to string location
 // int: file disctipter
-word write size ptr file_disctipter in
+word write size: u64 ptr: u64 file_disctipter: u64 -> null in
     size ptr file_disctipter SYS_write syscall3
 end
 
 // size -> ptr
 // size: of string
 // ptr: pointer to string location
-word print size ptr in
+word print size: u64 ptr: u64 -> null in
     size ptr 1 write
 end
 
@@ -373,11 +373,69 @@ end
 // size: of string
 // ptr: pointer to string location
 // prints a '\n'
-word println size ptr in
-    size ptr print "\n" print
+word println size: u64 ptr: u64 -> null in
+  size ptr print "\n" print
 end
 
-word exit exit_code in
-    exit_code 60 syscall1
+word assert condition: bool size: u64 ptr: u64 -> null in
+  condition if
+    return
+  end
+  size ptr print
+  0 exit
 end
 
+// exit_code: int
+word exit exit_code: u64 -> null in
+  exit_code 60 syscall1
+end
+
+// num: int or char
+word is_digit num: char -> bool in
+  num 48 >= num 57 <= and return
+end
+
+// num: int or chr
+word is_alpha_lower num: char -> bool in
+  num 97 >= num 122 <= and return
+end
+
+// num: int or chr
+word is_alpha_upper num: char -> bool in
+  num 65 >= num 90 <= and return
+end
+
+// num: int or chr
+word is_symbols num: char -> bool in
+  num 91 >= num 96 <= and return
+end
+
+// num: int or chr
+word is_alpha num: char -> bool in
+  num is_alpha_lower num is_alpha_upper or return
+end
+
+// num: int or chr
+word is_newline num: char -> bool in
+  num 10 == return
+end
+
+// num: int or chr
+word is_space num: char -> bool in
+  num 32 == return
+end
+
+// num: int or chr
+word is_punctuation num: char -> bool in
+  num 33 >= num 47 <= and if
+    1 return
+  else num 58 >= num 64 <= and elif
+    1 return
+  else num 91 >= num 96 <= and elif
+    1 return
+  else num 123 >= num 126 <= and elif
+    1 return
+  else
+    0 return
+  end
+end

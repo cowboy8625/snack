@@ -38,7 +38,8 @@
   (defconst snack-keywords
     '("if" "elif" "else" "do" "true" "false" "let" "copy" "swap" "drop" "over" "rot"
     "while" "end" "or" "not" "and" "memory" "const" "word" "in" "use" "return"
-    "max" "syscall1" "syscall2" "syscall3" "syscall4" "syscall5" "syscall6")))
+    "max" "syscall1" "syscall2" "syscall3" "syscall4" "syscall5" "syscall6"
+    "null" "bool" "str" "char" "u64")))
 
 
 (defconst snack-highlights

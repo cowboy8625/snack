@@ -1,4 +1,0 @@
-// OUTPUT: 48
-word main in
-    1 23 + 2 * .
-end

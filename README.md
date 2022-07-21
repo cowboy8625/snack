@@ -10,8 +10,9 @@ this project I will put in use for another language project I am working on.
 
 # Install
 
-To use Snack you will need [Rust](https://rustup.rs/) and [fasm](https://flatassembler.net/download.php)
-After installing Rust just run
+To use Snack you will need
+[Rust](https://rustup.rs/) and
+[fasm](https://flatassembler.net/download.php) after installing run
 ```
 git clone https://github.com/cowboy8625/snack
 cd snack/snackc
@@ -49,26 +50,38 @@ and you all set.
 ```
 use std
 
-word main in
-  "Hello World!\n" syscall3
+word main -> null in
+"Hello World!" println
 end
 ```
 **Looping and Conditions**
 ```
+use std
+
+word main -> null in
 0 while copy 10 <= do
-  copy 0 == if
-    100 .
-  copy 1 == elif
-    200 .
-  copy 2 == elif
-    300 .
-  copy 3 == elif
-    400 .
-  else
-    copy .
-  end
-  1 +
+true == if
+"If" println
+copy 1 == elif
+"ElIf" println
+else
+"Else" println
+end
+1 +
 end drop
+end
+```
+**Functions**
+```
+use std
+
+word sub x: u64 y: u64 -> u64 in
+x y - return
+end
+
+word main -> null in
+10 20 sub .
+end
 ```
 
 ## Stack Commands
@@ -93,6 +106,8 @@ name|Description
 \<|Check which is Less of two items and places bool on top of stack
 \>=|Check which is Greater or Equal of two items and places bool on top of stack
 \<=|Check which is Less or Equalof two items and places bool on top of stack
+or|Takes two bools and returns true if one is true
+and|Takes two bools and returns true if both are true
 \+|Addes top two items on stack and places Result back on stack
 \-|Subtracts top two items on stack and places Result back on stack
 \*|Multiply top two items on stack and places Result back on stack
@@ -102,61 +117,22 @@ name|Description
 
 ## Memory
 
-name|Description
-----|-----------
+Name|Description|Usage
+:----|:-----------|:------
 memory|Push's memory address on stack
-!|Stores a single byte from a address on the stack.
-@|Loads a single byte from address on stack.
+!|Stores a single byte from a address on to the stack.| `memory 72 !`
+@|Loads a single byte from address and puts it on the stack.| `"H" @ drop .`
 
 
 ## Syscall's
 
-name|arg1|arg2|arg3
-----|----|----|----
-syscall3|message size|message location|File Descriptor
+syscall[1-6] use the one matching required args.
+For writing you would do `"Hello" 1 1 syscall3`
 
 ## Keywords
 name|usage
 :---|:---
 `use`|import lib snack file
 `word`|use to declare a "function"
-
-
-
-
-
-# How it works (Or Will)
-
-
-
-## Linking
-
-Take some of the naming with a grain of salt.
-
-Linking happens after the file is turned into tokens well all but
-the `while` loops do get linked to there end block in the lexing process.
-
-A link is just the tokens idx number so a jump in a condisional statement
-would be like this.
-```snack
-1 0 if
-100 .
-else
-200 .
-end
-```
-in the assembly we put a place to jump into the else block.
-```asm
-; check if we run if statement else we jump to the else block
-filename5:   ;←  this is the else starting point
-push  200
-pop   rdi
-call  print
-filename8:   ;←  this is the end starting point
-```
-
-Blocks are labeled with the filename stripped of any `-`, `/`, `\\` followed by
-the block index number.
-
-
-
+`in`|open Word Def block
+`return`|returns last pushed item to stack

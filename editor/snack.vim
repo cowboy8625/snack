@@ -12,16 +12,15 @@ syn keyword snackKeyword while end or not and memory const word in use return
 
 syn keyword snackFunction max
 syn keyword snackFunction syscall1 syscall2 syscall3 syscall4 syscall5 syscall6
-
-hi link snackKeyword Keyword
-hi link snackFunction Function
+syn keyword snackType     null bool char str u64
 
 syn keyword snackTodo contained TODO FIXME XXX NOTE
 syn match snackComment "//.*$" contains=snackTodo
 
-"----------------------------------------------------------------
-" Celestia Star Catalog Numbers
-"----------------------------------------------------------------
+
+" syn match snackWord "/word\ \+[^ ]\+" contains=snackTodo
+" syn match snackWord /\w\+\s*(/me=e-1,he=e-1
+syn match snackWord "\(word\_s\+\)\@<=\<[A-z0-9]\+\>"
 
 " Regular int like number with - + or nothing in front
 syn match snackNumber '\d\+' contained display
@@ -54,12 +53,16 @@ syn match snackCharacter /'\([^\\]\|\\\(.\|x\x\{2}\|u{\%(\x_*\)\{1,6}}\)\)'/
 syn match snackIdentifier contains=snackIdentifierPrime "\%([^[:cntrl:][:space:][:punct:][:digit:]]\|_\)\%([^[:cntrl:][:punct:][:space:]]\|_\)*" display contained
 
 
+hi def link snackKeyword           Keyword
+hi def link snackFunction          Function
+hi def link snackWord              Function
 hi def link snackIdentifierPrime   snackIdentifier
 hi def link snackIdentifier        Identifier
 hi def link snackTodo              Todo
 hi def link snackComment           Comment
 hi def link snackBlockCmd          Statement
 hi def link snackHip               Type
+hi def link snackType              Type
 hi def link snackString            Constant
 hi def link snackDesc              PreProc
 hi def link snackNumber            Constant

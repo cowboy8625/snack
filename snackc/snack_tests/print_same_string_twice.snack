@@ -1,35 +1,36 @@
 word main in
+  // size loc
+  "Hello World\n"
+  // Would like to make a variable binding like so.
+  // = string: str
 
-// size loc
-"Hello World\n"
-
-// size loc 0
-0 while copy 10 < do
-    // 0 size loc
-    rot
-    // 0 size loc loc
-    copy
-    // 0 loc size loc
-    rot
-    // 0 loc loc size
-    rot
-    // 0 loc loc size size
-    copy
-    // 0 loc size loc size
-    rot
-    // 0 loc size size loc
-    swap
-    1 1 syscall3
-    // 0 size loc
-    swap
-    // loc 0 size
-    rot
-    // size loc 0
-    rot
-    // size loc 1
-    1 +
-end drop
-// size loc
-swap
-1 1 syscall3
+  // size loc 0
+  0 while copy 10 < do
+      // 0 size loc
+      rot
+      // 0 size loc loc
+      copy
+      // 0 loc size loc
+      rot
+      // 0 loc loc size
+      rot
+      // 0 loc loc size size
+      copy
+      // 0 loc size loc size
+      rot
+      // 0 loc size size loc
+      swap
+      1 1 syscall3
+      // 0 size loc
+      swap
+      // loc 0 size
+      rot
+      // size loc 0
+      rot
+      // size loc 1
+      1 +
+  end drop
+  // size loc
+  swap
+  1 1 syscall3
 end

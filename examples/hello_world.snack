@@ -1,32 +1,5 @@
 use std
 
-const StrLoc  0  end
-const StrSize 12 end
-const NumberLoc StrSize 1 + end
-const NumberSize 1 end
-memory 0  + 72 !
-memory 1  + 101 !
-memory 2  + 108 !
-memory 3  + 108 !
-memory 4  + 111 !
-memory 5  + 32 !
-memory 6  + 87 !
-memory 7  + 111 !
-memory 8  + 114 !
-memory 9  + 108 !
-memory 10 + 100 !
-memory 11 + 33 !
-memory 13 + 108 !
-
-word helloWorld count in
-  0 while over over swap < do
-    StrSize memory StrLoc + println
-    NumberSize memory NumberLoc + println
-    1 +
-  end drop
-  "Done" println
-end
-
-word main in
-  5 helloWorld
+word main -> null in
+  "Hello World!" println
 end

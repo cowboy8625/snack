@@ -3,17 +3,26 @@ import glob
 import subprocess
 import itertools
 import argparse
+
+# Initialize parser
+parser = argparse.ArgumentParser()
+
+# Adding optional argument
+parser.add_argument("-b", "--Break", action='store_true', help = "Break on first failed test")
+parser.add_argument("-t", "--Test", help = "Test a single test case")
+
+# Read arguments from command line
+args = parser.parse_args()
+
+
+
 def test_file(f: str):
     snackc_result = subprocess.run(["./target/release/snackc", f], capture_output=True)
-    #program_output = snackc_result.stdout.decode()
-    #snack_path = f
     snack_rel = f.split("/")[-1]
     bin_path = "./" + f.split(".")[0]
-    #bin_rel = bin_path.split("/")[-1]
     text_path = bin_path[2:] + ".txt"
-    #text_rel = text_path.split("/")[-1]
     if snackc_result.returncode != 0:
-         print(f"{snack_rel}: {snackc_result.stderr.decode()}")
+         print(f"{snack_rel}:\n{snackc_result.stderr.decode()}")
     else:
         try:
             # open the text file and compare the binary output to what is in the text file.
@@ -32,25 +41,9 @@ def test_file(f: str):
     return None, True
 
 
-# Initialize parser
-parser = argparse.ArgumentParser()
-
-# Adding optional argument
-parser.add_argument("-b", "--Break", action='store_true', help = "Break on first failed test")
-parser.add_argument("-t", "--Test", help = "Test a single test case")
-
-# Read arguments from command line
-args = parser.parse_args()
-
-if args.Break:
-    print("Displaying Break as: % s" % args.Break)
-
-if args.Test:
-    print("Displaying Test as: % s" % args.Test)
-
-
 
 cargo_result = subprocess.run(["cargo", "build", "--release"], capture_output=True)
+
 print(cargo_result.stderr.decode())
 print(cargo_result.stdout.decode())
 
@@ -58,19 +51,32 @@ path = args.Test if args.Test else "*.snack"
 snack_files = glob.glob(f"snack_tests/{path}")
 width = max([len(i) for i in snack_files]) + 10
 errors = []
+
+total_count = len(snack_files)
+passed_count = 0
+failed_count = 0
 for f in snack_files:
     error, successful = test_file(f)
     if error:
         errors.append(error)
+        failed_count += 1
+    else:
+        passed_count += 1
     if not successful and args.Break:
         break
 
+# report
+print(f"\ntest result: {total_count} total ran; {passed_count} passed; {failed_count} failed;\n")
+
+# display failed test diffs
 for file_name, expected, got in errors:
     print(f"------{file_name}-------")
     print("[Expected]:")
-    print(expected[0:-1])
+    print(expected)
     print("[Got]:")
     print(got)
+
+
 
 if not args.Break:
     # Remove the binary and assembly file from the test directory

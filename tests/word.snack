@@ -1,9 +1,0 @@
-const SYS_write 1 end
-
-word writeHelloWorld in
-    "Hello  World  🍪 🦀 🥪\n" 1 SYS_write syscall3
-end
-
-word main in
-writeHelloWorld
-end
