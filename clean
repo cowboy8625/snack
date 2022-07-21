@@ -1,0 +1,2 @@
+#!/bin/bash
+find samples ! -name "*.snack" ! -name "*.txt" -type f -exec rm -f {} +

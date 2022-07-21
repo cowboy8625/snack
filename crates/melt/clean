@@ -1,0 +1,2 @@
+#!/bin/bash
+find samples ! -name "*.asm" -type f -exec rm -f {} +

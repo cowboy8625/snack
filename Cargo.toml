@@ -1,0 +1,25 @@
+[package]
+name = "snack"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.56"
+thiserror = "1.0.30"
+clap = { version = "3.1.18", features = ["cargo"] }
+parser = { path = "./crates/parser" , version = "0.0.0"}
+scanner = { path = "./crates/scanner" }
+melt = { path = "./crates/melt" }
+typechecker = { path = "./crates/typechecker" }
+
+[dev-dependencies]
+pretty_assertions = '1.1.0'
+
+[workspace]
+members = [
+    "./crates/*",
+]
+
+[features]
+token = ["parser/token"]
+ast = []

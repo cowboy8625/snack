@@ -1,5 +1,0 @@
-use std
-
-word main -> null in
-  "Hello World!" println
-end
