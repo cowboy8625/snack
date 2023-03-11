@@ -1,7 +1,0 @@
-word add x: u64 y: u64 -> u64 in
-    x y + return
-end
-
-word main -> null in
-    123 321 add .
-end

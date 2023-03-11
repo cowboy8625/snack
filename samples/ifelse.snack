@@ -1,0 +1,3 @@
+word main -> null do
+  0 1 < if 12 else 31 return
+end

@@ -1,0 +1,15 @@
+word add x: int y: int -> int do
+  x y + return
+end
+
+word sub x: int y: int -> int do
+  x y - return
+end
+
+word do_something a: int b: int c: int d: int -> int do
+  a b add c d sub add return
+end
+
+word main -> null do
+  20 10 2 1 do_something return
+end

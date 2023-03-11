@@ -1,0 +1,24 @@
+struct Foo do
+  member1: u64,
+  memeber2: str,
+end
+
+word is_num x: u64 -> bool do
+  x 48 > x 57 < and return
+end
+
+word max x: u64, y: u64 -> u64 do
+  x y > if x return else y return
+end
+
+word main -> null do
+  1 2 max dbg_int
+  '1' is_num dbg_int
+end
+
+// λ is a double wide char
+
+// >> << == >= <= != ! | || & &&
+
+
+

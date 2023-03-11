@@ -1,9 +1,0 @@
-// word one_of ch: char -> bool in
-//   ch 'A' == ch 'a' == or return
-// end
-
-word main -> null in
-  'a' 'A' == 'a' 'a' == or .
-  'A' 'A' == 'A' 'a' == or .
-  '1' 'A' == '1' 'a' == or .
-end

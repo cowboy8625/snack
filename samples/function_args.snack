@@ -1,7 +1,0 @@
-word write len: u64 ptr: u64 -> null in
-    len ptr 1 1 syscall3
-end
-
-word main in
-    "Hello World\n" write
-end

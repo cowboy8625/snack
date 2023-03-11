@@ -1,0 +1,3 @@
+word main -> null do
+  100 200 max return
+end
